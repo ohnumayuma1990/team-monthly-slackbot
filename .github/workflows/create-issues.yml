@@ -1,0 +1,30 @@
+name: Bulk Create Issues
+on:
+  workflow_dispatch:
+    inputs:
+      issues_text:
+        description: 'IssueのMarkdownテキストを貼り付け'
+        required: true
+        type: string
+
+jobs:
+  create-issues:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Create issues from text
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_TEXT: ${{ inputs.issues_text }}
+        run: |
+          # タイトルと本文をパースしてgh issue createを実行
+          python3 -c "
+          import os, re, subprocess
+          text = os.environ.get('INPUT_TEXT', '')
+          # '### Issue ...: タイトル' と コードブロックの中身を抽出
+          pattern = r'### Issue #\d+:\s*(.*?)\n\`\`\`markdown\n(.*?)\n\`\`\`'
+          matches = re.findall(pattern, text, re.DOTALL)
+          for title, body in matches:
+              subprocess.run(['gh', 'issue', 'create', '--title', title.strip(), '--body', body.strip()])
+          "
