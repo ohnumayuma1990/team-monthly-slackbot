@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       issues_text:
-        description: 'IssueのMarkdownテキストを貼り付け'
+        description: 'gh issue create のコマンド群を貼り付け'
         required: true
         type: string
 
@@ -12,19 +12,37 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       issues: write
+      contents: read
     steps:
       - name: Create issues from text
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INPUT_TEXT: ${{ inputs.issues_text }}
         run: |
-          # タイトルと本文をパースしてgh issue createを実行
           python3 -c "
           import os, re, subprocess
+
           text = os.environ.get('INPUT_TEXT', '')
-          # '### Issue ...: タイトル' と コードブロックの中身を抽出
-          pattern = r'### Issue #\d+:\s*(.*?)\n\`\`\`markdown\n(.*?)\n\`\`\`'
+
+          # --title と --body の中身を抽出する正規表現
+          pattern = r'gh issue create\s+--title\s+\"([^\"]+)\"\s+--body\s+\"(.*?)\"(?=\s*(?:#\s*Issue|gh issue create|$))'
           matches = re.findall(pattern, text, re.DOTALL)
+
+          print(f'Found {len(matches)} issues to create.')
+
+          if len(matches) == 0:
+              print('No issues matched. Please check the input format.')
+              exit(1)
+
           for title, body in matches:
-              subprocess.run(['gh', 'issue', 'create', '--title', title.strip(), '--body', body.strip()])
+              print(f'Creating issue: {title}')
+              res = subprocess.run(
+                  ['gh', 'issue', 'create', '--title', title.strip(), '--body', body.strip()],
+                  capture_output=True,
+                  text=True
+              )
+              if res.returncode != 0:
+                  print(f'Error: {res.stderr}')
+              else:
+                  print(f'Success: {res.stdout.strip()}')
           "
