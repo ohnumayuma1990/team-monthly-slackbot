@@ -12,6 +12,7 @@ export function registerSubmissionHandlers(
   app.view(
     SUBMISSION_MODAL_CALLBACK_ID,
     async ({ ack, view, body, client }) => {
+      console.log(`[ViewSubmission] Received modal submission from user ${body.user.id}, callback_id: ${view.callback_id}`);
       const values = view.state.values;
 
       // 1. Extract values
@@ -23,8 +24,11 @@ export function registerSubmissionHandlers(
       const memberName =
         values.member_name_block?.member_name_action?.value?.trim() || '';
 
+      console.log(`[ViewSubmission] Parsed type=${submissionType}, month=${targetMonth}, name=${memberName}`);
+
       // Validate name
       if (!memberName) {
+        console.log('[ViewSubmission] Validation failed: memberName is empty');
         await ack({
           response_action: 'errors',
           errors: {
@@ -36,6 +40,7 @@ export function registerSubmissionHandlers(
 
       // Acknowledge submission immediately
       await ack();
+      console.log('[ViewSubmission] Acknowledged view_submission');
 
       // 2. Build submission payload
       const submission: MonthlySubmission = {
@@ -100,17 +105,53 @@ export function registerSubmissionHandlers(
             }
           }
 
-          // Send confirmation DM
-          await client.chat.postMessage({
-            channel: userId,
-            text: confirmationText,
+        // Send response to user via conversations.open (guarantees DM delivery)
+        const sourceChannel = view.private_metadata || '';
+        console.log(`[ViewSubmission] Sending confirmation for user ${userId}, sourceChannel: ${sourceChannel}`);
+
+        // 1. Always send to the user's direct message with MonthlyBot
+        try {
+          const conversation = await client.conversations.open({
+            users: userId,
           });
-        } else {
-          await client.chat.postMessage({
-            channel: userId,
-            text: `⚠️ スプレッドシートへの保存で確認事項があります:\n${result.message}\n(スプレッドシートの表記名やタブ名をご確認ください)`,
-          });
+          const dmChannelId = conversation.channel?.id;
+          if (dmChannelId) {
+            await client.chat.postMessage({
+              channel: dmChannelId,
+              text: confirmationText,
+            });
+            console.log(`[ViewSubmission] Sent confirmation to user DM channel: ${dmChannelId}`);
+          }
+        } catch (dmErr) {
+          console.error('[ViewSubmission] Failed to open/send DM with user:', dmErr);
         }
+
+        // 2. If executed from a public/private team channel (starts with 'C'), also post ephemeral
+        if (sourceChannel && sourceChannel.startsWith('C')) {
+          try {
+            await client.chat.postEphemeral({
+              channel: sourceChannel,
+              user: userId,
+              text: confirmationText,
+            });
+            console.log(`[ViewSubmission] Sent ephemeral message to channel ${sourceChannel}`);
+          } catch (chErr) {
+            console.warn('[ViewSubmission] Could not send ephemeral to channel:', chErr);
+          }
+        }
+      } else {
+        try {
+          const conversation = await client.conversations.open({ users: userId });
+          if (conversation.channel?.id) {
+            await client.chat.postMessage({
+              channel: conversation.channel.id,
+              text: `⚠️ スプレッドシートへの保存で確認事項があります:\n${result.message}\n(スプレッドシートの表記名やタブ名をご確認ください)`,
+            });
+          }
+        } catch (e) {
+          console.error('Error sending fallback error notification:', e);
+        }
+      }
       } catch (error: unknown) {
         console.error('Error submitting data to Google Sheets:', error);
         const errMsg =

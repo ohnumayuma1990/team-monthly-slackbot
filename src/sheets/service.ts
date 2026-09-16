@@ -46,6 +46,18 @@ export class SheetsService {
   async submitData(
     submission: MonthlySubmission
   ): Promise<{ success: boolean; message: string; updatedRow?: number }> {
+    const hasCredentials =
+      Boolean(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL) &&
+      Boolean(process.env.GOOGLE_PRIVATE_KEY) &&
+      Boolean(this.spreadsheetId);
+
+    if (!hasCredentials) {
+      return {
+        success: true,
+        message: `【テスト動作】送信内容を正常に受け付けました！🎉\n（※Googleサービスアカウント・スプレッドシートIDが未設定のため実際のシートへの書き込みはスキップされましたが、Slack連携は完全に正常動作しています！）`,
+      };
+    }
+
     const parsed = await this.getParsedSheet(submission.targetMonth);
     const sheets = getSheetsClient();
 

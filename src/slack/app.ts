@@ -1,5 +1,6 @@
 import { App, AppOptions } from '@slack/bolt';
 import { registerCommandHandlers } from './handlers/commands';
+import { registerMessageHandlers } from './handlers/messages';
 import { registerSubmissionHandlers } from './handlers/submissions';
 import { ReminderService } from '../reminder/service';
 import { createCustomRoutes } from '../reminder/handler';
@@ -75,6 +76,9 @@ export function createSlackApp(): CreateAppResult {
 
   // Register command handlers (/gw, /monthly)
   registerCommandHandlers(app);
+
+  // Register DM message & button handlers
+  registerMessageHandlers(app);
 
   // Register view submission handlers
   registerSubmissionHandlers(app, sheetsService, geminiService);
