@@ -10,6 +10,7 @@ COPY tsconfig.json ./
 COPY src/ ./src/
 
 RUN npm run build
+RUN npm prune --omit=dev
 
 # Step 2: Production runtime stage
 FROM node:22-alpine AS runner
@@ -20,8 +21,7 @@ ENV NODE_ENV=production
 ENV PORT=8080
 
 COPY package*.json ./
-RUN npm ci --only=production
-
+COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 
 # Non-root user for security
