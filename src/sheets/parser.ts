@@ -73,41 +73,52 @@ export function parseMonthlySheet(
     const colD = (row[3] || '').trim();
     const colE = (row[4] || '').trim();
 
-    // Check for section headers across columns
     const rowText = `${colA} ${colB} ${colC} ${colD} ${colE}`.toLowerCase();
-    if (
-      rowText.includes('近況') ||
-      rowText.includes('稼働状況') ||
-      rowText.includes('面談希望') ||
-      rowText.includes('individual')
-    ) {
-      currentSection = 'individual';
-      continue;
-    } else if (
-      (colA === 'グループワーク' || colB === 'グループワーク' || rowText.includes('gw')) &&
-      !rowText.includes('メンバー') &&
-      !rowText.includes('近況')
-    ) {
-      currentSection = 'groupwork';
-      continue;
-    } else if (
-      rowText.includes('本日のまとめ') ||
-      rowText.includes('まとめ') ||
-      rowText.includes('オブザーバー') ||
-      rowText.includes('総評') ||
-      rowText.includes('observer')
-    ) {
-      currentSection = 'observer';
-      continue;
-    }
 
-    // Skip table header rows (e.g., "氏名", "近況", "名前", etc.)
-    if (
-      colB === '氏名' ||
-      colB === '名前' ||
-      colB === '氏　名' ||
-      colB === 'Name'
-    ) {
+    // Check if colB is header-like or empty rather than a member's name
+    const isHeaderLikeColB =
+      !colB ||
+      ['氏名', '名前', '氏　名', 'name'].includes(colB.toLowerCase()) ||
+      colB.includes('グループワーク') ||
+      colB.includes('まとめ') ||
+      colB.includes('総評') ||
+      colB.includes('オブザーバー');
+
+    if (isHeaderLikeColB) {
+      if (
+        rowText.includes('本日のまとめ') ||
+        rowText.includes('まとめ') ||
+        rowText.includes('オブザーバー') ||
+        rowText.includes('総評') ||
+        rowText.includes('observer')
+      ) {
+        currentSection = 'observer';
+        continue;
+      }
+
+      if (
+        (colA.includes('グループワーク') ||
+          colB.includes('グループワーク') ||
+          rowText.includes('gw')) &&
+        !rowText.includes('メンバー') &&
+        !rowText.includes('近況')
+      ) {
+        currentSection = 'groupwork';
+        continue;
+      }
+
+      if (
+        rowText.includes('近況') ||
+        rowText.includes('稼働状況') ||
+        rowText.includes('稼働') ||
+        rowText.includes('面談希望') ||
+        rowText.includes('individual')
+      ) {
+        currentSection = 'individual';
+        continue;
+      }
+
+      // If it's a table header (e.g. "氏名") or an empty row, skip it
       continue;
     }
 

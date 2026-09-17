@@ -1,10 +1,10 @@
-﻿import { WebClient } from '@slack/web-api';
+import { WebClient } from '@slack/web-api';
 import {
   WeeklyCheckSummary,
   WeeklyReportCheckResult,
   GSessionLoginStatus,
 } from '../types';
-import { isNameMatch } from '../sheets/parser';
+import { isNameMatch, normalizeName } from '../sheets/parser';
 
 export const ONUMA_TEAM_MEMBERS = [
   '小川　智矢',
@@ -24,6 +24,8 @@ export class WeeklyCheckService {
   private weeklyPass: string;
   private gsessionUser: string;
   private gsessionPass: string;
+  private memberSlackMap: Map<string, string>;
+  private managerSlackId?: string;
 
   constructor() {
     this.weeklyUser =
@@ -38,6 +40,57 @@ export class WeeklyCheckService {
       process.env.GSESSION_USERNAME || process.env.GSESSION_USER || '';
     this.gsessionPass =
       process.env.GSESSION_PASSWORD || process.env.GSESSION_PASS || '';
+    this.managerSlackId = process.env.MANAGER_SLACK_USER_ID;
+
+    this.memberSlackMap = new Map();
+    this.loadMemberMappings();
+  }
+
+  /**
+   * Loads member Slack mappings from MEMBER_SLACK_MAPPING env.
+   */
+  private loadMemberMappings() {
+    const mappingJson = process.env.MEMBER_SLACK_MAPPING;
+    if (mappingJson) {
+      try {
+        const parsed = JSON.parse(mappingJson);
+        for (const [name, slackId] of Object.entries(parsed)) {
+          this.memberSlackMap.set(normalizeName(name), slackId as string);
+        }
+      } catch (e) {
+        console.warn(
+          'Failed to parse MEMBER_SLACK_MAPPING in WeeklyCheckService:',
+          e
+        );
+      }
+    }
+  }
+
+  /**
+   * Returns a Slack mention string (<@U12345> or fallback name).
+   */
+  getSlackMention(name: string): string {
+    for (const [mappedName, slackId] of this.memberSlackMap.entries()) {
+      if (isNameMatch(mappedName, name)) {
+        return `<@${slackId}>`;
+      }
+    }
+    return `${name}さん`;
+  }
+
+  /**
+   * Returns Slack mention for the manager (Onuma).
+   */
+  getManagerMention(): string {
+    if (this.managerSlackId) {
+      return `<@${this.managerSlackId}>`;
+    }
+    for (const [mappedName, slackId] of this.memberSlackMap.entries()) {
+      if (isNameMatch(mappedName, '大沼')) {
+        return `<@${slackId}>`;
+      }
+    }
+    return '大沼さん';
   }
 
   /**
@@ -213,16 +266,42 @@ export class WeeklyCheckService {
     const dateStr = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
 
     const rep = summary.weeklyReport;
+
+    // 週報未提出、または1週間以上GS未ログインのどちらかに当てはまるメンバーを抽出
+    const flaggedMembers = new Set<string>();
+    for (const m of rep.unsubmitted) {
+      flaggedMembers.add(m);
+    }
+    for (const im of summary.gSession.inactiveMembers) {
+      flaggedMembers.add(im.name);
+    }
+
+    let alertHeader = '';
+    if (flaggedMembers.size > 0) {
+      const managerMention = this.getManagerMention();
+      const targetMentions = Array.from(flaggedMembers)
+        .map((m) => this.getSlackMention(m))
+        .join(' ');
+
+      alertHeader =
+        `🚨 *【要確認】週報未提出、またはGroupSessionに1週間以上未ログインのメンバーがいます*\n` +
+        `宛先: ${managerMention} / ${targetMentions}\n\n`;
+    } else {
+      alertHeader =
+        `🎉 *【定期チェック完了】大沼チーム全員が週報提出済み＆GSログイン確認済みです！* ✨\n\n`;
+    }
+
     const repSubNames = rep.submitted.join('、') || '（なし）';
     const repUnsubNames =
-      rep.unsubmitted.join('、') || '（なし・全員提出完了！🎉）';
+      rep.unsubmitted.map((m) => this.getSlackMention(m)).join('、') ||
+      '（なし・全員提出完了！🎉）';
 
     let gsText = '';
     if (summary.gSession.inactiveMembers.length > 0) {
       const inactiveList = summary.gSession.inactiveMembers
         .map(
           (m) =>
-            `  ・*${m.name}* (最終ログイン: ${m.lastLoginDate || `${m.daysSinceLastLogin}日前`})`
+            `  ・${this.getSlackMention(m.name)} (最終ログイン: ${m.lastLoginDate || `${m.daysSinceLastLogin}日前`})`
         )
         .join('\n');
       gsText =
@@ -233,6 +312,7 @@ export class WeeklyCheckService {
     }
 
     return (
+      `${alertHeader}` +
       `📊 *【毎週火曜定期チェック】大沼チーム状況レポート* (${dateStr})\n\n` +
       `━━━━━━━━━━━━━━━━━━━━━━\n` +
       `📝 *1. 週報提出状況 (${rep.weekLabel})*\n` +
