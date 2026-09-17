@@ -6,12 +6,14 @@ import { ReminderService } from '../reminder/service';
 import { createCustomRoutes } from '../reminder/handler';
 import { SheetsService } from '../sheets/service';
 import { GeminiService } from '../ai/gemini';
+import { WeeklyCheckService } from '../weekly/service';
 
 export interface CreateAppResult {
   app: App;
   sheetsService: SheetsService;
   reminderService: ReminderService;
   geminiService: GeminiService;
+  weeklyService: WeeklyCheckService;
 }
 
 /**
@@ -28,6 +30,7 @@ export function createSlackApp(): CreateAppResult {
   const sheetsService = new SheetsService();
   const reminderService = new ReminderService(sheetsService);
   const geminiService = new GeminiService();
+  const weeklyService = new WeeklyCheckService();
 
   let appOptions: AppOptions = {
     token,
@@ -55,7 +58,7 @@ export function createSlackApp(): CreateAppResult {
 
   // In HTTP mode, register custom routes with the receiver
   if (!isSocketMode) {
-    const routes = createCustomRoutes(app, reminderService);
+    const routes = createCustomRoutes(app, reminderService, weeklyService);
     // Bolt's default HTTPReceiver supports router custom routes
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const receiver = (app as any).receiver;
@@ -74,8 +77,8 @@ export function createSlackApp(): CreateAppResult {
     }
   }
 
-  // Register command handlers (/gw, /monthly, /gw-status)
-  registerCommandHandlers(app, sheetsService);
+  // Register command handlers (/gw, /monthly, /gw-status, /weekly-check)
+  registerCommandHandlers(app, sheetsService, weeklyService);
 
   // Register DM message & button handlers
   registerMessageHandlers(app);
@@ -88,5 +91,6 @@ export function createSlackApp(): CreateAppResult {
     sheetsService,
     reminderService,
     geminiService,
+    weeklyService,
   };
 }

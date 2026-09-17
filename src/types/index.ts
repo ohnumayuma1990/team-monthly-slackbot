@@ -47,3 +47,27 @@ export interface SheetStructure {
   observerSection: SectionRange;
   memberRows: Map<string, number>; // Normalized Name -> Row number
 }
+
+export interface WeeklyReportCheckResult {
+  weekLabel: string;
+  submitted: string[];
+  unsubmitted: string[];
+  totalMembers: number;
+}
+
+export interface GSessionLoginStatus {
+  name: string;
+  lastLoginDate?: string;
+  daysSinceLastLogin?: number;
+  isInactive: boolean; // >= 7 days
+}
+
+export interface WeeklyCheckSummary {
+  checkedAt: Date;
+  weeklyReport: WeeklyReportCheckResult;
+  gSession: {
+    inactiveMembers: GSessionLoginStatus[];
+    activeMembers: GSessionLoginStatus[];
+  };
+}
+

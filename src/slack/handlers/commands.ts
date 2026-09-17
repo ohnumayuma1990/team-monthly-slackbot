@@ -2,13 +2,15 @@ import { App } from '@slack/bolt';
 import { buildSubmissionModal } from '../modals/submissionModal';
 import { SheetsService } from '../../sheets/service';
 import { formatDefaultMonth } from '../../sheets/parser';
+import { WeeklyCheckService } from '../../weekly/service';
 
 /**
- * Registers slash command handlers (/gw, /monthly, /gw-status).
+ * Registers slash command handlers (/gw, /monthly, /gw-status, /weekly-check).
  */
 export function registerCommandHandlers(
   app: App,
-  sheetsService: SheetsService = new SheetsService()
+  sheetsService: SheetsService = new SheetsService(),
+  weeklyService: WeeklyCheckService = new WeeklyCheckService()
 ) {
   // Command handler for /gw
   app.command('/gw', async ({ command, ack, client }) => {
@@ -121,5 +123,40 @@ export function registerCommandHandlers(
       });
     }
   });
+
+  // Command handler for /weekly-check (Weekly report & GroupSession login check)
+  app.command('/weekly-check', async ({ command, ack, client }) => {
+    await ack();
+
+    try {
+      const [weeklyReport, gSession] = await Promise.all([
+        weeklyService.checkWeeklyReports(),
+        weeklyService.checkGSessionLogins(7),
+      ]);
+
+      const summary = {
+        checkedAt: new Date(),
+        weeklyReport,
+        gSession,
+      };
+
+      const statusMessage = weeklyService.generateSummaryMessage(summary);
+
+      await client.chat.postEphemeral({
+        channel: command.channel_id,
+        user: command.user_id,
+        text: statusMessage,
+      });
+    } catch (err: unknown) {
+      console.error('Error in /weekly-check command:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      await client.chat.postEphemeral({
+        channel: command.channel_id,
+        user: command.user_id,
+        text: `⚠️ 週報・GroupSessionチェックの実行中にエラーが発生しました:\n${msg}`,
+      });
+    }
+  });
 }
+
 
