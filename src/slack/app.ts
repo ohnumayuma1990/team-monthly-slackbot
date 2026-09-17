@@ -80,8 +80,8 @@ export function createSlackApp(): CreateAppResult {
   // Register command handlers (/gw, /monthly, /gw-status, /weekly-check)
   registerCommandHandlers(app, sheetsService, weeklyService);
 
-  // Register DM message & button handlers
-  registerMessageHandlers(app);
+  // Register Slack interaction handlers
+  registerMessageHandlers(app, weeklyService);
 
   // Register view submission handlers
   registerSubmissionHandlers(app, sheetsService, geminiService);

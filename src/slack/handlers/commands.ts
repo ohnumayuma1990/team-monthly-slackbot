@@ -69,7 +69,7 @@ export function registerCommandHandlers(
   });
 
   // Status check command: /gw-status
-  app.command('/gw-status', async ({ command, ack, client }) => {
+  app.command('/gw-status', async ({ command, ack, respond }) => {
     await ack();
 
     const targetMonth = command.text.trim() || formatDefaultMonth();
@@ -93,14 +93,17 @@ export function registerCommandHandlers(
       const submittedIndivNames =
         submittedIndiv.map((r) => r.name).join('、') || '（なし）';
       const unsubmittedIndivNames =
-        unsubmittedIndiv.map((r) => r.name).join('、') || '（なし・全員提出済み🎉）';
+        unsubmittedIndiv.map((r) => r.name).join('、') ||
+        '（なし・全員提出済み🎉）';
 
       const submittedGwNames =
         submittedGw.map((r) => r.name).join('、') || '（なし）';
       const unsubmittedGwNames =
-        unsubmittedGw.map((r) => r.name).join('、') || '（なし・全員提出済み🎉）';
+        unsubmittedGw.map((r) => r.name).join('、') ||
+        '（なし・全員提出済み🎉）';
 
-      const statusMessage = `📊 *【${targetMonth}】共有事項・提出進捗状況*\n\n` +
+      const statusMessage =
+        `📊 *【${targetMonth}】共有事項・提出進捗状況*\n\n` +
         `*1. 個人セクション（近況・稼働）*\n` +
         `  ✅ *提出済み (${submittedIndiv.length}名):* ${submittedIndivNames}\n` +
         `  ⏳ *未提出 (${unsubmittedIndiv.length}名):* ${unsubmittedIndivNames}\n\n` +
@@ -108,27 +111,26 @@ export function registerCommandHandlers(
         `  ✅ *提出済み (${submittedGw.length}名):* ${submittedGwNames}\n` +
         `  ⏳ *未提出 (${unsubmittedGw.length}名):* ${unsubmittedGwNames}`;
 
-      await client.chat.postEphemeral({
-        channel: command.channel_id,
-        user: command.user_id,
+      await respond({
+        response_type: 'ephemeral',
         text: statusMessage,
       });
     } catch (err: unknown) {
       console.error('Error in /gw-status command:', err);
       const msg = err instanceof Error ? err.message : String(err);
-      await client.chat.postEphemeral({
-        channel: command.channel_id,
-        user: command.user_id,
+      await respond({
+        response_type: 'ephemeral',
         text: `⚠️ シート「${targetMonth}」の状況取得に失敗しました:\n${msg}\n（※シートタブの存在やGoogleサービスアカウント権限をご確認ください）`,
       });
     }
   });
 
   // Command handler for /weekly-check (Weekly report & GroupSession login check)
-  app.command('/weekly-check', async ({ command, ack, client }) => {
+  app.command('/weekly-check', async ({ command, ack, respond }) => {
     await ack();
 
     try {
+      const isPublic = command.text.trim().toLowerCase() === 'post';
       const [weeklyReport, gSession] = await Promise.all([
         weeklyService.checkWeeklyReports(),
         weeklyService.checkGSessionLogins(7),
@@ -140,19 +142,26 @@ export function registerCommandHandlers(
         gSession,
       };
 
-      const statusMessage = weeklyService.generateSummaryMessage(summary);
+      let statusMessage = weeklyService.generateSummaryMessage(summary);
 
-      await client.chat.postEphemeral({
-        channel: command.channel_id,
-        user: command.user_id,
-        text: statusMessage,
-      });
+      if (isPublic) {
+        await respond({
+          response_type: 'in_channel',
+          text: statusMessage,
+        });
+      } else {
+        statusMessage +=
+          '\n\n_(💡 このメッセージはあなただけに表示されています。チャンネル全体に投稿する場合は `/weekly-check post` と入力してください)_';
+        await respond({
+          response_type: 'ephemeral',
+          text: statusMessage,
+        });
+      }
     } catch (err: unknown) {
       console.error('Error in /weekly-check command:', err);
       const msg = err instanceof Error ? err.message : String(err);
-      await client.chat.postEphemeral({
-        channel: command.channel_id,
-        user: command.user_id,
+      await respond({
+        response_type: 'ephemeral',
         text: `⚠️ 週報・GroupSessionチェックの実行中にエラーが発生しました:\n${msg}`,
       });
     }
