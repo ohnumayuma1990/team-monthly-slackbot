@@ -40,12 +40,40 @@ const CONFIG = {
   // 処理済みメールに付けるGmailラベル名（重複送信を確実に防止）
   PROCESSED_LABEL: 'SlackBot-Processed',
   
-  // Gmail検索クエリ（過去2日以内の対象メールで、未処理ラベルのもの）
-  SEARCH_QUERY: '(subject:applies OR subject:allpe OR subject:"t-ohnuma" OR from:furukawa@poweredge.co.jp OR from:furkawa@poweredge.co.jp) -label:SlackBot-Processed newer_than:2d',
-  
+  // 検索対象の件名キーワード（カンマ区切りで複数指定）
+  KEYWORDS: 'applies, allpe, t-ohnuma',
+
+  // 検索対象の送信者メールアドレス（カンマ区切りで複数指定）
+  FROM_EMAILS: 'furukawa@poweredge.co.jp, furkawa@poweredge.co.jp',
+
   // 1回で処理する最大スレッド数
   MAX_THREADS: 20
 };
+
+/**
+ * キーワードとメールアドレスからGmail検索クエリを動的に生成
+ */
+function buildSearchQuery() {
+  const parts = [];
+  const keywords = CONFIG.KEYWORDS.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+  const emails = CONFIG.FROM_EMAILS.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+
+  for (var i = 0; i < keywords.length; i++) {
+    var kw = keywords[i];
+    if (kw.indexOf('-') !== -1 || kw.indexOf(' ') !== -1) {
+      parts.push('subject:"' + kw + '"');
+    } else {
+      parts.push('subject:' + kw);
+    }
+  }
+
+  for (var j = 0; j < emails.length; j++) {
+    parts.push('from:' + emails[j]);
+  }
+
+  var baseFilter = parts.length > 0 ? '(' + parts.join(' OR ') + ')' : '';
+  return baseFilter + ' -label:' + CONFIG.PROCESSED_LABEL + ' newer_than:2d';
+}
 
 /**
  * メイン関数: Gmailから対象メールを検索し、SlackBotへ送信
@@ -54,14 +82,17 @@ function syncGmailToSlack() {
   console.log('--- Gmail同期処理を開始します ---');
   
   // 処理済みラベルの取得または作成
-  let processedLabel = GmailApp.getUserLabelByName(CONFIG.PROCESSED_LABEL);
+  var processedLabel = GmailApp.getUserLabelByName(CONFIG.PROCESSED_LABEL);
   if (!processedLabel) {
     processedLabel = GmailApp.createLabel(CONFIG.PROCESSED_LABEL);
     console.log('ラベルを作成しました: ' + CONFIG.PROCESSED_LABEL);
   }
 
+  var query = buildSearchQuery();
+  console.log('実行検索クエリ: ' + query);
+
   // 検索の実行
-  const threads = GmailApp.search(CONFIG.SEARCH_QUERY, 0, CONFIG.MAX_THREADS);
+  var threads = GmailApp.search(query, 0, CONFIG.MAX_THREADS);
   console.log('検知された対象スレッド数: ' + threads.length);
 
   if (threads.length === 0) {
@@ -69,24 +100,28 @@ function syncGmailToSlack() {
     return;
   }
 
-  const messagesToSend = [];
-  const processedThreads = [];
+  var keywords = CONFIG.KEYWORDS.toLowerCase().split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+  var emails = CONFIG.FROM_EMAILS.toLowerCase().split(',').map(function(s) { return s.trim(); }).filter(Boolean);
 
-  for (let i = 0; i < threads.length; i++) {
-    const thread = threads[i];
-    const messages = thread.getMessages();
+  var messagesToSend = [];
+  var processedThreads = [];
 
-    for (let j = 0; j < messages.length; j++) {
-      const msg = messages[j];
-      const subject = msg.getSubject() || '';
-      const from = msg.getFrom() || '';
+  for (var i = 0; i < threads.length; i++) {
+    var thread = threads[i];
+    var messages = thread.getMessages();
+
+    for (var j = 0; j < messages.length; j++) {
+      var msg = messages[j];
+      var subject = msg.getSubject() || '';
+      var from = msg.getFrom() || '';
+      var subLower = subject.toLowerCase();
+      var fromLower = from.toLowerCase();
 
       // 条件に合致するか再確認
-      const isApplies = /applies/i.test(subject);
-      const isAllpe = /allpe/i.test(subject) || /t-ohnuma/i.test(subject);
-      const isFurukawa = /furukawa@poweredge\.co\.jp/i.test(from) || /furkawa@poweredge\.co\.jp/i.test(from);
+      var isKeywordMatch = keywords.some(function(kw) { return subLower.indexOf(kw) !== -1; });
+      var isEmailMatch = emails.some(function(em) { return fromLower.indexOf(em) !== -1; });
 
-      if (isApplies || isAllpe || isFurukawa) {
+      if (isKeywordMatch || isEmailMatch) {
         messagesToSend.push({
           id: msg.getId(),
           threadId: thread.getId(),

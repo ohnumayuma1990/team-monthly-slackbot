@@ -12,6 +12,29 @@ import {
 import { isNameMatch, normalizeName } from '../sheets/parser';
 import { GeminiService } from '../ai/gemini';
 
+export const DEFAULT_ATTENDANCE_KEYWORDS = ['applies'];
+export const DEFAULT_ANNOUNCEMENT_KEYWORDS = ['allpe', 't-ohnuma'];
+export const DEFAULT_ANNOUNCEMENT_FROM_EMAILS = [
+  'furukawa@poweredge.co.jp',
+  'furkawa@poweredge.co.jp',
+];
+
+/**
+ * Parses a comma-separated string from environment variables into a trimmed array.
+ */
+export function parseCommaSeparatedList(
+  value?: string,
+  defaultValue: string[] = []
+): string[] {
+  if (!value || value.trim() === '') {
+    return [...defaultValue];
+  }
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
 export interface EmailProcessingResult {
   attendanceRecords: AttendanceRecord[];
   announcements: AllHandsAnnouncement[];
@@ -26,15 +49,49 @@ export class EmailProcessingService {
   }
 
   /**
+   * Returns the list of attendance keywords (from env ATTENDANCE_KEYWORDS or default).
+   */
+  getAttendanceKeywords(): string[] {
+    return parseCommaSeparatedList(
+      process.env.ATTENDANCE_KEYWORDS,
+      DEFAULT_ATTENDANCE_KEYWORDS
+    );
+  }
+
+  /**
+   * Returns the list of announcement keywords (from env ANNOUNCEMENT_KEYWORDS or default).
+   */
+  getAnnouncementKeywords(): string[] {
+    return parseCommaSeparatedList(
+      process.env.ANNOUNCEMENT_KEYWORDS,
+      DEFAULT_ANNOUNCEMENT_KEYWORDS
+    );
+  }
+
+  /**
+   * Returns the list of announcement sender emails (from env ANNOUNCEMENT_FROM_EMAILS or default).
+   */
+  getAnnouncementFromEmails(): string[] {
+    return parseCommaSeparatedList(
+      process.env.ANNOUNCEMENT_FROM_EMAILS,
+      DEFAULT_ANNOUNCEMENT_FROM_EMAILS
+    );
+  }
+
+  /**
    * Checks if an email is an attendance notification for a team member.
-   * Rule: Subject contains 'applies' AND a registered team member's name.
+   * Rule: Subject contains any attendance keyword AND a registered team member's name.
    */
   isAttendanceEmail(msg: GmailIncomingMessage): {
     isAttendance: boolean;
     matchedMemberName?: string;
   } {
     const subject = msg.subject || '';
-    if (!/applies/i.test(subject)) {
+    const keywords = this.getAttendanceKeywords();
+    const hasKeyword = keywords.some((kw) =>
+      subject.toLowerCase().includes(kw.toLowerCase())
+    );
+    if (!hasKeyword) {
       return { isAttendance: false };
     }
 
@@ -52,22 +109,21 @@ export class EmailProcessingService {
 
   /**
    * Checks if an email is an all-hands or important announcement.
-   * Rule: Subject contains 'allpe' OR 't-ohnuma', OR From is furukawa@poweredge.co.jp / furkawa@poweredge.co.jp.
+   * Rule: Subject contains any announcement keyword OR From contains any announcement sender email.
    */
   isAnnouncementEmail(msg: GmailIncomingMessage): boolean {
     const subject = (msg.subject || '').toLowerCase();
     const from = (msg.from || '').toLowerCase();
 
-    // Subject checks
-    if (subject.includes('allpe') || subject.includes('t-ohnuma')) {
+    // 1. Subject keyword match
+    const keywords = this.getAnnouncementKeywords();
+    if (keywords.some((kw) => subject.includes(kw.toLowerCase()))) {
       return true;
     }
 
-    // Sender checks (furukawa / furkawa)
-    if (
-      from.includes('furukawa@poweredge.co.jp') ||
-      from.includes('furkawa@poweredge.co.jp')
-    ) {
+    // 2. Sender email match
+    const fromEmails = this.getAnnouncementFromEmails();
+    if (fromEmails.some((email) => from.includes(email.toLowerCase()))) {
       return true;
     }
 

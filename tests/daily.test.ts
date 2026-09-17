@@ -7,7 +7,10 @@ import {
   getManagerSlackId,
   DEFAULT_TEAM_MEMBERS,
 } from '../src/config/members';
-import { EmailProcessingService } from '../src/email/service';
+import {
+  EmailProcessingService,
+  parseCommaSeparatedList,
+} from '../src/email/service';
 import {
   extractNewestWrTargetDateId,
   extractSubmittedStaffRecords,
@@ -171,6 +174,65 @@ describe('EmailProcessingService', () => {
         body: '',
       })
     ).toBe(false);
+  });
+
+  test('supports custom comma-separated keywords and email addresses from environment variables', () => {
+    // 1. Test parseCommaSeparatedList
+    expect(parseCommaSeparatedList('a, b , c  ')).toEqual(['a', 'b', 'c']);
+    expect(parseCommaSeparatedList('', ['default'])).toEqual(['default']);
+
+    // 2. Test ATTENDANCE_KEYWORDS env var
+    process.env.ATTENDANCE_KEYWORDS = '勤怠申請, 休暇連絡, applies';
+    const customEmailService = new EmailProcessingService();
+
+    expect(
+      customEmailService.isAttendanceEmail({
+        id: 'c-1',
+        date: '',
+        from: 'tomoya.ogawa@poweredge.co.jp',
+        subject: '【勤怠申請】09/18 小川　智矢',
+        body: '',
+      }).isAttendance
+    ).toBe(true);
+
+    expect(
+      customEmailService.isAttendanceEmail({
+        id: 'c-2',
+        date: '',
+        from: 'tomoya.ogawa@poweredge.co.jp',
+        subject: '【休暇連絡】09/18 小川　智矢',
+        body: '',
+      }).isAttendance
+    ).toBe(true);
+
+    // 3. Test ANNOUNCEMENT_KEYWORDS and ANNOUNCEMENT_FROM_EMAILS env vars
+    process.env.ANNOUNCEMENT_KEYWORDS = 'allpe, urgent_alert, 重要周知';
+    process.env.ANNOUNCEMENT_FROM_EMAILS = 'ceo@example.com, hr@example.com';
+
+    expect(
+      customEmailService.isAnnouncementEmail({
+        id: 'c-3',
+        date: '',
+        from: 'anyone@example.com',
+        subject: '【重要周知】社内規定の改定について',
+        body: '',
+      })
+    ).toBe(true);
+
+    expect(
+      customEmailService.isAnnouncementEmail({
+        id: 'c-4',
+        date: '',
+        from: 'hr@example.com',
+        subject: '定期健康診断のご案内',
+        body: '',
+      })
+    ).toBe(true);
+
+    // Cleanup
+    delete process.env.ATTENDANCE_KEYWORDS;
+    delete process.env.ANNOUNCEMENT_KEYWORDS;
+    delete process.env.ANNOUNCEMENT_FROM_EMAILS;
   });
 
   test('parseAttendanceRecord extracts fields cleanly', async () => {
