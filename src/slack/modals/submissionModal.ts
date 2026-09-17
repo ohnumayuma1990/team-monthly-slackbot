@@ -1,4 +1,3 @@
-import { ModalView } from '@slack/bolt';
 import { formatDefaultMonth } from '../../sheets/parser';
 
 export const SUBMISSION_MODAL_CALLBACK_ID = 'team_monthly_submission_modal';
@@ -14,14 +13,18 @@ export function generateMonthOptions(): {
   const options = [];
 
   for (let offset = -1; offset <= 1; offset++) {
-    const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
-    const monthLabel = formatDefaultMonth(d);
+    const targetDate = new Date(
+      now.getFullYear(),
+      now.getMonth() + offset,
+      now.getDate()
+    );
+    const monthStr = formatDefaultMonth(targetDate);
+    let label = `${monthStr}`;
+    if (offset === 0) label += ' (当月)';
+
     options.push({
-      text: {
-        type: 'plain_text' as const,
-        text: offset === 0 ? `${monthLabel} (当月)` : monthLabel,
-      },
-      value: monthLabel,
+      text: { type: 'plain_text' as const, text: label },
+      value: monthStr,
     });
   }
 
@@ -31,7 +34,8 @@ export function generateMonthOptions(): {
 /**
  * Builds the Slack Block Kit Modal for team monthly submissions.
  */
-export function buildSubmissionModal(defaultName: string = ''): ModalView {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function buildSubmissionModal(defaultName: string = ''): any {
   const defaultMonth = formatDefaultMonth(new Date());
   const monthOptions = generateMonthOptions();
 

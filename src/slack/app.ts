@@ -23,9 +23,16 @@ export interface CreateAppResult {
  */
 export function createSlackApp(): CreateAppResult {
   const isSocketMode = process.env.SLACK_SOCKET_MODE === 'true';
-  const token = process.env.SLACK_BOT_TOKEN;
-  const signingSecret = process.env.SLACK_SIGNING_SECRET;
+  const token = process.env.SLACK_BOT_TOKEN || 'xoxb-placeholder-token';
+  const signingSecret =
+    process.env.SLACK_SIGNING_SECRET || 'placeholder-signing-secret';
   const appToken = process.env.SLACK_APP_TOKEN;
+
+  if (!process.env.SLACK_BOT_TOKEN) {
+    console.warn(
+      '⚠️ SLACK_BOT_TOKEN is not configured in environment variables. Running in placeholder mode.'
+    );
+  }
 
   const sheetsService = new SheetsService();
   const reminderService = new ReminderService(sheetsService);
@@ -47,19 +54,22 @@ export function createSlackApp(): CreateAppResult {
     // HTTP Mode for Cloud Run
     // Use Bolt's HTTPReceiver with custom routes for Cloud Scheduler and health checks
     const receiver = new HTTPReceiver({
-      signingSecret: signingSecret || '',
-      port: Number(process.env.PORT) || 3000,
+      signingSecret: signingSecret || 'placeholder-signing-secret',
+      port: Number(process.env.PORT) || 8080,
       customRoutes: [],
     });
 
     app = new App({
       token,
       receiver,
+      tokenVerificationEnabled: false,
     });
 
     // Register routes with app reference
     const routes = createCustomRoutes(app, reminderService, weeklyService);
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const buildRoutes = require('@slack/bolt/dist/receivers/custom-routes').buildReceiverRoutes;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (receiver as any).routes = buildRoutes(routes);
   }
 

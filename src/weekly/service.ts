@@ -382,7 +382,7 @@ export class WeeklyCheckService {
    * Executes full check and posts message to Slack.
    */
   async runWeeklyCheck(
-    client: WebClient,
+    client: any,
     channelId: string
   ): Promise<{ success: boolean; message: string }> {
     const [weeklyReport, gSession] = await Promise.all([
