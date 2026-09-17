@@ -275,9 +275,10 @@ describe('EmailProcessingService', () => {
     ];
 
     const message = emailService.formatAttendanceSummaryMessage(records, '2026-09-18');
-    expect(message).toContain('【本日（09/18）のチーム勤怠連絡】');
-    expect(message).toContain('・*小川 智矢*: [全休] [当日申請] (体調不良のため終日お休み)');
-    expect(message).toContain('・*朝岡 拓人*: [在宅]');
+    expect(message).toContain('チーム勤怠連絡');
+    expect(message).toContain('昨日12:00以降の申請');
+    expect(message).toContain('・*小川 智矢*: [全休] [09/18] [当日申請] (体調不良のため終日お休み)');
+    expect(message).toContain('・*朝岡 拓人*: [在宅] [09/18]');
     expect(message).toContain('その他メンバー: 申請なし（通常勤務）');
   });
 

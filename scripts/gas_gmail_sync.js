@@ -46,12 +46,26 @@ const CONFIG = {
   // 検索対象の送信者メールアドレス（カンマ区切りで複数指定）
   FROM_EMAILS: 'furukawa@poweredge.co.jp, furkawa@poweredge.co.jp',
 
+  // 検索開始時刻（昨日のこの時刻以降のメールを網羅的に検索。デフォルト: 12:00）
+  SEARCH_START_HOUR: 12,
+
   // 1回で処理する最大スレッド数
-  MAX_THREADS: 20
+  MAX_THREADS: 30
 };
 
 /**
+ * 検索開始日時（昨日の12:00:00）を計算
+ */
+function getSearchSinceDate() {
+  var now = new Date();
+  var startHour = CONFIG.SEARCH_START_HOUR !== undefined ? CONFIG.SEARCH_START_HOUR : 12;
+  var yesterdayNoon = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, startHour, 0, 0);
+  return yesterdayNoon;
+}
+
+/**
  * キーワードとメールアドレスからGmail検索クエリを動的に生成
+ * 昨日の12:00以降の未処理メールを網羅的に検索
  */
 function buildSearchQuery() {
   const parts = [];
@@ -72,7 +86,11 @@ function buildSearchQuery() {
   }
 
   var baseFilter = parts.length > 0 ? '(' + parts.join(' OR ') + ')' : '';
-  return baseFilter + ' -label:' + CONFIG.PROCESSED_LABEL + ' newer_than:2d';
+  var sinceDate = getSearchSinceDate();
+  var epochSeconds = Math.floor(sinceDate.getTime() / 1000);
+
+  // after:秒単位タイムスタンプで「昨日の12:00以降」を正確に指定
+  return baseFilter + ' -label:' + CONFIG.PROCESSED_LABEL + ' after:' + epochSeconds;
 }
 
 /**
@@ -89,6 +107,8 @@ function syncGmailToSlack() {
   }
 
   var query = buildSearchQuery();
+  var sinceDate = getSearchSinceDate();
+  console.log('検索開始起点（昨日の12:00）: ' + sinceDate.toLocaleString('ja-JP'));
   console.log('実行検索クエリ: ' + query);
 
   // 検索の実行
@@ -112,6 +132,10 @@ function syncGmailToSlack() {
 
     for (var j = 0; j < messages.length; j++) {
       var msg = messages[j];
+      // 昨日の12:00より前の古いメールは確実に除外
+      if (msg.getDate().getTime() < sinceDate.getTime()) {
+        continue;
+      }
       var subject = msg.getSubject() || '';
       var from = msg.getFrom() || '';
       var subLower = subject.toLowerCase();

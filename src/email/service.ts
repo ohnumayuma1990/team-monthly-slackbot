@@ -282,7 +282,7 @@ export class EmailProcessingService {
 
     if (records.length === 0) {
       return (
-        `☀️ *【本日（${formattedDate}）のチーム勤怠連絡】*\n` +
+        `☀️ *【チーム勤怠連絡（${formattedDate}・昨日12:00以降の申請）】*\n` +
         `━━━━━━━━━━━━━━━━━━━━━━\n` +
         `✅ *全メンバー通常勤務*（休暇・遅刻・在宅等の申請はありません）\n` +
         `━━━━━━━━━━━━━━━━━━━━━━`
@@ -293,12 +293,13 @@ export class EmailProcessingService {
       .map((r) => {
         const sameDayTag = r.isSameDay ? ' [当日申請]' : '';
         const reasonTag = r.reason ? ` (${r.reason})` : '';
-        return `・*${r.memberName}*: [${r.leaveType}]${sameDayTag}${reasonTag}`;
+        const dateTag = r.date ? ` [${r.date.substring(5).replace('-', '/')}]` : '';
+        return `・*${r.memberName}*: [${r.leaveType}]${dateTag}${sameDayTag}${reasonTag}`;
       })
       .join('\n');
 
     return (
-      `☀️ *【本日（${formattedDate}）のチーム勤怠連絡】*\n` +
+      `☀️ *【チーム勤怠連絡（${formattedDate}・昨日12:00以降の申請）】*\n` +
       `━━━━━━━━━━━━━━━━━━━━━━\n` +
       `${items}\n` +
       `・_その他メンバー: 申請なし（通常勤務）_\n` +
