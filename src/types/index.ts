@@ -92,3 +92,15 @@ export interface WeeklySummaryResult {
   totalMembers: number;
 }
 
+export interface GSessionScheduleEvent {
+  id: string;
+  title: string;
+}
+
+export interface GSessionScheduleDay {
+  dateStr: string; // '20260918'
+  formattedDate: string; // '09/18(金)'
+  holiday?: string; // '敬老の日'
+  events: GSessionScheduleEvent[];
+}
+

@@ -5,6 +5,7 @@ import {
   GSessionLoginStatus,
   WeeklyReportContent,
   ProjectReportDetail,
+  GSessionScheduleDay,
 } from '../types';
 import { isNameMatch, normalizeName } from '../sheets/parser';
 import { GeminiService } from '../ai/gemini';
@@ -118,6 +119,21 @@ export class WeeklyCheckService {
       }
     }
     return '大沼さん';
+  }
+
+  /**
+   * Returns Slack user ID for the manager (Onuma).
+   */
+  getManagerSlackId(): string {
+    if (this.managerSlackId) {
+      return this.managerSlackId;
+    }
+    for (const [mappedName, slackId] of this.memberSlackMap.entries()) {
+      if (isNameMatch(mappedName, '大沼')) {
+        return slackId;
+      }
+    }
+    return DEFAULT_MEMBER_SLACK_MAPPING['大沼'] || '';
   }
 
   /**
@@ -314,10 +330,91 @@ export class WeeklyCheckService {
   }
 
   /**
+   * Logs into GroupSession and returns the session cookie string.
+   */
+  async loginGSession(): Promise<{ sessionCookie: string } | null> {
+    if (!this.gsessionUser || !this.gsessionPass) {
+      return null;
+    }
+
+    try {
+      const loginUrl = 'https://po-tal.poweredge.co.jp/gsession/common/cmn001.do';
+      const initRes = await fetch(loginUrl);
+      const initHtml = await initRes.text();
+      const tokenMatch = initHtml.match(
+        /name="org\.apache\.struts\.taglib\.html\.TOKEN"\s+value="([^"]+)"/i
+      );
+      const token = tokenMatch ? tokenMatch[1] : '';
+      const setCookie = initRes.headers.get('set-cookie') || '';
+
+      const postBody = new URLSearchParams();
+      if (token) postBody.append('org.apache.struts.taglib.html.TOKEN', token);
+      postBody.append('CMD', 'login');
+      postBody.append('cmn001loginType', '1');
+      postBody.append('cmn001Userid', this.gsessionUser);
+      postBody.append('cmn001Passwd', this.gsessionPass);
+
+      const loginRes = await fetch(loginUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Cookie: setCookie,
+        },
+        body: postBody.toString(),
+        redirect: 'manual',
+      });
+
+      const sessionCookie = loginRes.headers.get('set-cookie') || setCookie;
+      return { sessionCookie };
+    } catch (err) {
+      console.error('Failed to log into GroupSession:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Fetches the 1-week schedule for the logged-in user (Onuma) from the GroupSession main dashboard widget.
+   */
+  async fetchGSessionMySchedule(
+    sessionCookie?: string
+  ): Promise<GSessionScheduleDay[]> {
+    let cookie = sessionCookie;
+    if (!cookie) {
+      const session = await this.loginGSession();
+      if (!session) {
+        return [];
+      }
+      cookie = session.sessionCookie;
+    }
+
+    try {
+      const schmainUrl =
+        'https://po-tal.poweredge.co.jp/gsession/schedule/schmain.do';
+      const res = await fetch(schmainUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Cookie: cookie,
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+        body: '',
+      });
+
+      const html = await res.text();
+      return parseGSessionSchmainHtml(html);
+    } catch (err) {
+      console.error('Failed to fetch GroupSession my schedule:', err);
+      return [];
+    }
+  }
+
+  /**
    * Checks GroupSession login status for Onuma team (flagging inactive >= threshold days).
    */
   async checkGSessionLogins(
-    inactiveThresholdDays = 7
+    inactiveThresholdDays = 7,
+    sessionCookie?: string
   ): Promise<{
     inactiveMembers: GSessionLoginStatus[];
     activeMembers: GSessionLoginStatus[];
@@ -350,33 +447,14 @@ export class WeeklyCheckService {
     }
 
     try {
-      const loginUrl = 'https://po-tal.poweredge.co.jp/gsession/common/cmn001.do';
-      const initRes = await fetch(loginUrl);
-      const initHtml = await initRes.text();
-      const tokenMatch = initHtml.match(
-        /name="org\.apache\.struts\.taglib\.html\.TOKEN"\s+value="([^"]+)"/i
-      );
-      const token = tokenMatch ? tokenMatch[1] : '';
-      const setCookie = initRes.headers.get('set-cookie') || '';
-
-      const postBody = new URLSearchParams();
-      if (token) postBody.append('org.apache.struts.taglib.html.TOKEN', token);
-      postBody.append('CMD', 'login');
-      postBody.append('cmn001loginType', '1');
-      postBody.append('cmn001Userid', this.gsessionUser);
-      postBody.append('cmn001Passwd', this.gsessionPass);
-
-      const loginRes = await fetch(loginUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          Cookie: setCookie,
-        },
-        body: postBody.toString(),
-        redirect: 'manual',
-      });
-
-      const sessionCookie = loginRes.headers.get('set-cookie') || setCookie;
+      let cookie = sessionCookie;
+      if (!cookie) {
+        const login = await this.loginGSession();
+        if (!login) {
+          throw new Error('Failed to login to GroupSession');
+        }
+        cookie = login.sessionCookie;
+      }
 
       // Fetch login history for Team Onuma (man050.do with grpSid=157)
       const listUrl = 'https://po-tal.poweredge.co.jp/gsession/main/man050.do';
@@ -399,7 +477,7 @@ export class WeeklyCheckService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
-          Cookie: sessionCookie,
+          Cookie: cookie,
           'User-Agent':
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         },
@@ -524,15 +602,23 @@ export class WeeklyCheckService {
   }
 
   /**
-   * Executes full check, posts message to public channel, and delivers private AI summary to manager DM.
+   * Executes full check, posts message to public channel, and delivers private AI summary and schedule to manager DM.
    */
   async runWeeklyCheck(
     client: any,
     channelId: string
   ): Promise<{ success: boolean; message: string }> {
+    let gSessionCookie: string | undefined;
+    try {
+      const gLogin = await this.loginGSession();
+      gSessionCookie = gLogin?.sessionCookie;
+    } catch (e) {
+      console.warn('GroupSession pre-login failed:', e);
+    }
+
     const [weeklyReport, gSession] = await Promise.all([
       this.checkWeeklyReports(),
-      this.checkGSessionLogins(7),
+      this.checkGSessionLogins(7, gSessionCookie),
     ]);
 
     const summary: WeeklyCheckSummary = {
@@ -548,6 +634,8 @@ export class WeeklyCheckService {
       channel: channelId,
       text,
     });
+
+    const managerId = this.getManagerSlackId();
 
     // 2. Safely generate and send private AI weekly summary to manager's 1:1 DM
     try {
@@ -571,21 +659,43 @@ export class WeeklyCheckService {
       );
     }
 
+    // 3. Fetch and deliver Onuma's 1-week GroupSession schedule to manager's 1:1 DM
+    try {
+      if (managerId) {
+        const scheduleDays = await this.fetchGSessionMySchedule(gSessionCookie);
+        if (scheduleDays && scheduleDays.length > 0) {
+          const scheduleMsg = formatGSessionScheduleMessage(scheduleDays);
+          await client.chat.postMessage({
+            channel: managerId,
+            text: scheduleMsg,
+          });
+        }
+      }
+    } catch (schErr) {
+      console.error(
+        'Failed to fetch or send manager GroupSession schedule:',
+        schErr
+      );
+    }
+
     return { success: true, message: '毎週火曜チェック通知を送信しました。' };
   }
 
   /**
-   * Generates weekly reports summary on-demand for manager.
+   * Generates weekly reports summary on-demand for manager and delivers along with 1-week schedule.
    */
   async runWeeklySummary(
     client: any,
     requestingUserId?: string
-  ): Promise<{ success: boolean; message: string; summaryText: string }> {
-    const targetUser =
-      requestingUserId ||
-      this.managerSlackId ||
-      DEFAULT_MEMBER_SLACK_MAPPING['大沼'];
+  ): Promise<{
+    success: boolean;
+    message: string;
+    summaryText: string;
+    scheduleText?: string;
+  }> {
+    const targetUser = requestingUserId || this.getManagerSlackId();
 
+    let summaryText = '';
     const session = await this.fetchWeeklyReportTop();
     if (!session) {
       // Mock / fallback if credentials missing
@@ -605,11 +715,10 @@ export class WeeklyCheckService {
           ],
         },
       ];
-      const summaryText =
-        await this.geminiService.generateWeeklyReportsSummary(
-          fallbackReports,
-          '先週分'
-        );
+      summaryText = await this.geminiService.generateWeeklyReportsSummary(
+        fallbackReports,
+        '先週分'
+      );
 
       if (client && targetUser) {
         await client.chat.postMessage({
@@ -617,32 +726,74 @@ export class WeeklyCheckService {
           text: summaryText,
         });
       }
-      return { success: true, message: '週報要約を送信しました。', summaryText };
+    } else {
+      const checkResult = parseWeeklyReportTopHtml(session.pageHtml);
+      const submittedStaff = extractSubmittedStaffRecords(session.pageHtml);
+      const reportDetails = await this.fetchSubmittedReportDetails(
+        session.cookieStr,
+        submittedStaff
+      );
+
+      summaryText = await this.geminiService.generateWeeklyReportsSummary(
+        reportDetails,
+        checkResult.weekLabel
+      );
+
+      if (client && targetUser) {
+        await client.chat.postMessage({
+          channel: targetUser,
+          text: summaryText,
+        });
+      }
     }
 
-    const checkResult = parseWeeklyReportTopHtml(session.pageHtml);
-    const submittedStaff = extractSubmittedStaffRecords(session.pageHtml);
-    const reportDetails = await this.fetchSubmittedReportDetails(
-      session.cookieStr,
-      submittedStaff
-    );
+    // Also fetch GroupSession schedule and deliver to targetUser DM
+    let scheduleText: string | undefined;
+    try {
+      const scheduleDays = await this.fetchGSessionMySchedule();
+      if (scheduleDays && scheduleDays.length > 0) {
+        scheduleText = formatGSessionScheduleMessage(scheduleDays);
+        if (client && targetUser) {
+          await client.chat.postMessage({
+            channel: targetUser,
+            text: scheduleText,
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to fetch schedule in runWeeklySummary:', e);
+    }
 
-    const summaryText = await this.geminiService.generateWeeklyReportsSummary(
-      reportDetails,
-      checkResult.weekLabel
-    );
+    return {
+      success: true,
+      message: '週報要約および週間スケジュールを大沼さんのDMに送信しました。',
+      summaryText,
+      scheduleText,
+    };
+  }
+
+  /**
+   * Fetches and sends 1-week GroupSession schedule on demand.
+   */
+  async runMySchedule(
+    client?: any,
+    requestingUserId?: string
+  ): Promise<{ success: boolean; message: string; scheduleText: string }> {
+    const targetUser = requestingUserId || this.getManagerSlackId();
+    const scheduleDays = await this.fetchGSessionMySchedule();
+    const scheduleText = formatGSessionScheduleMessage(scheduleDays);
 
     if (client && targetUser) {
       await client.chat.postMessage({
         channel: targetUser,
-        text: summaryText,
+        text: scheduleText,
       });
     }
 
     return {
       success: true,
-      message: '週報要約を大沼さんのDMに送信しました。',
-      summaryText,
+      message: '週間スケジュールを取得しました。',
+      scheduleText,
     };
   }
 }
@@ -878,3 +1029,152 @@ export function parseGSessionMan050Html(
 
   return { inactiveMembers, activeMembers };
 }
+
+/**
+ * Parses GroupSession schmain.do dashboard HTML to extract 1-week schedule for logged-in user.
+ */
+export function parseGSessionSchmainHtml(html: string): GSessionScheduleDay[] {
+  const trRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  const rows: string[] = [];
+  let m;
+  while ((m = trRegex.exec(html)) !== null) {
+    rows.push(m[1]);
+  }
+
+  // Find date header row (row with 7 <th>)
+  const headerRow = rows.find((r) => (r.match(/<th\b/gi) || []).length === 7);
+  if (!headerRow) {
+    return [];
+  }
+
+  const thCells = [...headerRow.matchAll(/<th[^>]*>([\s\S]*?)<\/th>/gi)].map(
+    (x) => x[1]
+  );
+  const days: GSessionScheduleDay[] = [];
+
+  thCells.forEach((c) => {
+    const dateMatch = c.match(/moveDailyScheduleFromMain\('day',\s*(\d{8})\)/);
+    const dateStr = dateMatch ? dateMatch[1] : '';
+    const tooltipMatch = c.match(/<span class="tooltips">([^<]+)<\/span>/i);
+    const rawLabel = tooltipMatch ? tooltipMatch[1].trim() : '';
+
+    let formattedDate = rawLabel;
+    if (dateStr && dateStr.length === 8) {
+      const month = dateStr.substring(4, 6);
+      const day = dateStr.substring(6, 8);
+      const weekdayMatch = rawLabel.match(/\(([^)]+)\)/);
+      const weekday = weekdayMatch ? `(${weekdayMatch[1]})` : '';
+      formattedDate = `${month}/${day}${weekday}`;
+    }
+
+    days.push({
+      dateStr,
+      formattedDate,
+      holiday: undefined,
+      events: [],
+    });
+  });
+
+  // Extract all rows after headerRow
+  const headerIdx = rows.indexOf(headerRow);
+  const dataRows = rows.slice(headerIdx + 1);
+
+  dataRows.forEach((row) => {
+    // 1. Check for holidays in <td> cells (e.g. <font color="#ff0000">敬老の日</font>)
+    const tdCells = [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map(
+      (x) => x[1]
+    );
+    if (tdCells.length === 7) {
+      tdCells.forEach((cell, colIdx) => {
+        const holMatch = cell.match(
+          /<font[^>]*color="#ff0000">([^<]+)<\/font>/i
+        );
+        if (holMatch && days[colIdx]) {
+          days[colIdx].holiday = holMatch[1].trim();
+        }
+      });
+    }
+
+    // 2. Check for schedule events: editSchedule('schw_edit', date, id, usrSid, ...)
+    const eventRegex =
+      /editSchedule\('schw_edit',\s*(\d{8}),\s*(\d+),\s*(\d+),\s*\d+\);([\s\S]*?)<\/a>/gi;
+    let em;
+    while ((em = eventRegex.exec(row)) !== null) {
+      const dateStr = em[1];
+      const schId = em[2];
+      const innerHtml = em[4];
+
+      const tooltipMatch = innerHtml.match(
+        /<span class="tooltips">([\s\S]*?)<\/span>/i
+      );
+      const title = (tooltipMatch ? tooltipMatch[1] : innerHtml)
+        .replace(/<[^>]+>/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const targetDay = days.find((d) => d.dateStr === dateStr);
+      if (targetDay && title) {
+        if (!targetDay.events.some((e) => e.id === schId)) {
+          targetDay.events.push({ id: schId, title });
+        }
+      }
+    }
+  });
+
+  return days;
+}
+
+/**
+ * Formats GSessionScheduleDay array into a clean Slack notification text.
+ */
+export function formatGSessionScheduleMessage(
+  days: GSessionScheduleDay[]
+): string {
+  if (!days || days.length === 0) {
+    return '🗓️ *【GroupSession】大沼さんの今週のスケジュール*\nスケジュール情報を取得できませんでした。';
+  }
+
+  const startDay = days[0].formattedDate;
+  const endDay = days[days.length - 1].formattedDate;
+
+  const list = days
+    .map((d) => {
+      let content = '';
+      if (d.events.length > 0) {
+        const eventTitles = d.events
+          .map((e) => {
+            if (
+              e.title.includes('夏休み') ||
+              e.title.includes('休暇') ||
+              e.title.includes('有給')
+            ) {
+              return `🏖️ *${e.title}*`;
+            }
+            return `📌 *${e.title}*`;
+          })
+          .join('、');
+
+        if (d.holiday) {
+          content = `🇯🇵 _${d.holiday}_ / ${eventTitles}`;
+        } else {
+          content = eventTitles;
+        }
+      } else if (d.holiday) {
+        content = `🇯🇵 _${d.holiday}_ (予定なし)`;
+      } else {
+        content = '_予定なし_';
+      }
+
+      return `  ・*${d.formattedDate}*: ${content}`;
+    })
+    .join('\n');
+
+  return (
+    `🗓️ *【GroupSession】大沼さんの1週間スケジュール* (${startDay}〜${endDay})\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `${list}\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `🔗 <https://po-tal.poweredge.co.jp/gsession/schedule/sch010.do|GroupSessionスケジュールを開く>`
+  );
+}
+

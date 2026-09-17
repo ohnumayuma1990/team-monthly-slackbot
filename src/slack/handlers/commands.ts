@@ -2,7 +2,10 @@ import { App } from '@slack/bolt';
 import { buildSubmissionModal } from '../modals/submissionModal';
 import { SheetsService } from '../../sheets/service';
 import { formatDefaultMonth } from '../../sheets/parser';
-import { WeeklyCheckService } from '../../weekly/service';
+import {
+  WeeklyCheckService,
+  formatGSessionScheduleMessage,
+} from '../../weekly/service';
 
 /**
  * Registers slash command handlers (/gw, /monthly, /gw-status, /weekly-check).
@@ -126,14 +129,22 @@ export function registerCommandHandlers(
   });
 
   // Command handler for /weekly-check (Weekly report & GroupSession login check)
-  app.command('/weekly-check', async ({ command, ack, respond }) => {
+  app.command('/weekly-check', async ({ command, ack, respond, client }) => {
     await ack();
 
     try {
       const isPublic = command.text.trim().toLowerCase() === 'post';
+      let sessionCookie: string | undefined;
+      try {
+        const loginRes = await weeklyService.loginGSession();
+        sessionCookie = loginRes?.sessionCookie;
+      } catch (e) {
+        console.warn('GroupSession login failed in /weekly-check:', e);
+      }
+
       const [weeklyReport, gSession] = await Promise.all([
         weeklyService.checkWeeklyReports(),
-        weeklyService.checkGSessionLogins(7),
+        weeklyService.checkGSessionLogins(7, sessionCookie),
       ]);
 
       const summary = {
@@ -149,7 +160,43 @@ export function registerCommandHandlers(
           response_type: 'in_channel',
           text: statusMessage,
         });
+
+        // If posted publicly, deliver manager schedule strictly to manager DM
+        try {
+          const scheduleDays =
+            await weeklyService.fetchGSessionMySchedule(sessionCookie);
+          if (scheduleDays.length > 0) {
+            const scheduleMsg = formatGSessionScheduleMessage(scheduleDays);
+            const managerId = weeklyService.getManagerSlackId();
+            if (managerId && client) {
+              await client.chat.postMessage({
+                channel: managerId,
+                text: scheduleMsg,
+              });
+            }
+          }
+        } catch (schErr) {
+          console.error(
+            'Failed to send manager schedule in public /weekly-check:',
+            schErr
+          );
+        }
       } else {
+        // Ephemeral response to caller
+        try {
+          const scheduleDays =
+            await weeklyService.fetchGSessionMySchedule(sessionCookie);
+          if (scheduleDays.length > 0) {
+            statusMessage +=
+              '\n\n' + formatGSessionScheduleMessage(scheduleDays);
+          }
+        } catch (schErr) {
+          console.warn(
+            'Failed to append schedule to ephemeral weekly-check:',
+            schErr
+          );
+        }
+
         statusMessage +=
           '\n\n_(💡 このメッセージはあなただけに表示されています。チャンネル全体に投稿する場合は `/weekly-check post` と入力してください)_';
         await respond({
@@ -173,14 +220,21 @@ export function registerCommandHandlers(
 
     await respond({
       response_type: 'ephemeral',
-      text: '⏳ 最新の提出済み週報を取得し、Gemini AIで要約を作成しています... 少々お待ちください。',
+      text: '⏳ 最新の提出済み週報とGroupSessionスケジュールを取得しています... 少々お待ちください。',
     });
 
     try {
-      const result = await weeklyService.runWeeklySummary(client, command.user_id);
+      const result = await weeklyService.runWeeklySummary(
+        client,
+        command.user_id
+      );
+      let reply = `✅ 週報AI要約を作成し、DMへ非公開送信しました！\n\n${result.summaryText}`;
+      if (result.scheduleText) {
+        reply += `\n\n${result.scheduleText}`;
+      }
       await respond({
         response_type: 'ephemeral',
-        text: `✅ 週報AI要約を作成し、DMへ非公開送信しました！\n\n${result.summaryText}`,
+        text: reply,
       });
     } catch (err: unknown) {
       console.error('Error in /weekly-summary command:', err);
@@ -191,6 +245,53 @@ export function registerCommandHandlers(
       });
     }
   });
+
+  // Command handler for /my-schedule & /gs-schedule
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleScheduleCommand = async ({
+    command,
+    ack,
+    respond,
+    client,
+  }: any) => {
+    await ack();
+
+    await respond({
+      response_type: 'ephemeral',
+      text: '⏳ GroupSessionから今週のスケジュールを取得しています...',
+    });
+
+    try {
+      const scheduleDays = await weeklyService.fetchGSessionMySchedule();
+      const scheduleText = formatGSessionScheduleMessage(scheduleDays);
+
+      if (client && command.user_id) {
+        try {
+          await client.chat.postMessage({
+            channel: command.user_id,
+            text: scheduleText,
+          });
+        } catch (dmErr) {
+          console.warn('Failed to send DM in schedule command:', dmErr);
+        }
+      }
+
+      await respond({
+        response_type: 'ephemeral',
+        text: scheduleText,
+      });
+    } catch (err: unknown) {
+      console.error('Error in schedule command:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      await respond({
+        response_type: 'ephemeral',
+        text: `⚠️ スケジュール取得中にエラーが発生しました:\n${msg}`,
+      });
+    }
+  };
+
+  app.command('/my-schedule', handleScheduleCommand);
+  app.command('/gs-schedule', handleScheduleCommand);
 }
 
 

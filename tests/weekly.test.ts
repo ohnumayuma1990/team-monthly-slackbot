@@ -3,8 +3,14 @@ import {
   parseWeeklyReportTopHtml,
   parseGSessionMan050Html,
   extractSubmittedStaffRecords,
+  parseGSessionSchmainHtml,
+  formatGSessionScheduleMessage,
 } from '../src/weekly/service';
-import { WeeklyCheckSummary, WeeklyReportContent } from '../src/types';
+import {
+  WeeklyCheckSummary,
+  WeeklyReportContent,
+  GSessionScheduleDay,
+} from '../src/types';
 import { GeminiService } from '../src/ai/gemini';
 
 describe('WeeklyCheckService', () => {
@@ -239,5 +245,141 @@ describe('WeeklyCheckService', () => {
       channel: 'U_ONUMA_123',
       text: expect.stringContaining('【マネージャー専用・非公開】週報AI要約レポート'),
     });
+  });
+
+  it('accurately parses GroupSession schmain.do HTML extracting 7-day schedule, holidays, and events', () => {
+    const mockSchmainHtml = `
+      <table>
+        <tr>
+          <th><a onclick="moveDailyScheduleFromMain('day', 20260918)"><span class="tooltips">18日(金)</span>18日(金)</a></th>
+          <th><a onclick="moveDailyScheduleFromMain('day', 20260919)"><span class="tooltips">19日(土)</span>19日(土)</a></th>
+          <th><a onclick="moveDailyScheduleFromMain('day', 20260920)"><span class="tooltips">20日(日)</span>20日(日)</a></th>
+          <th><a onclick="moveDailyScheduleFromMain('day', 20260921)"><span class="tooltips">21日(月)</span>21日(月)</a></th>
+          <th><a onclick="moveDailyScheduleFromMain('day', 20260922)"><span class="tooltips">22日(火)</span>22日(火)</a></th>
+          <th><a onclick="moveDailyScheduleFromMain('day', 20260923)"><span class="tooltips">23日(水)</span>23日(水)</a></th>
+          <th><a onclick="moveDailyScheduleFromMain('day', 20260924)"><span class="tooltips">24日(木)</span>24日(木)</a></th>
+        </tr>
+        <tr>
+          <td></td><td></td><td></td>
+          <td><font color="#ff0000">敬老の日</font></td>
+          <td><font color="#ff0000">国民の休日</font></td>
+          <td><font color="#ff0000">秋分の日</font></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>
+            <a onclick="editSchedule('schw_edit', 20260918, 501, 48, 0);">
+              <span class="tooltips">プロジェクト定例</span>プロジェクト定例
+            </a>
+          </td>
+          <td></td><td></td><td></td><td></td><td></td>
+          <td>
+            <a onclick="editSchedule('schw_edit', 20260924, 502, 48, 0);">
+              <span class="tooltips">夏休み</span>夏休み
+            </a>
+          </td>
+        </tr>
+      </table>
+    `;
+
+    const days = parseGSessionSchmainHtml(mockSchmainHtml);
+    expect(days).toHaveLength(7);
+
+    // Day 1: 09/18(金)
+    expect(days[0].formattedDate).toBe('09/18(金)');
+    expect(days[0].events).toHaveLength(1);
+    expect(days[0].events[0].title).toBe('プロジェクト定例');
+
+    // Day 4: 09/21(月)
+    expect(days[3].formattedDate).toBe('09/21(月)');
+    expect(days[3].holiday).toBe('敬老の日');
+    expect(days[3].events).toHaveLength(0);
+
+    // Day 7: 09/24(木)
+    expect(days[6].formattedDate).toBe('09/24(木)');
+    expect(days[6].events).toHaveLength(1);
+    expect(days[6].events[0].title).toBe('夏休み');
+  });
+
+  it('formats GroupSession schedule into clean Slack text with emojis', () => {
+    const mockDays: GSessionScheduleDay[] = [
+      {
+        dateStr: '20260918',
+        formattedDate: '09/18(金)',
+        events: [{ id: '1', title: 'チーム定例' }],
+      },
+      {
+        dateStr: '20260921',
+        formattedDate: '09/21(月)',
+        holiday: '敬老の日',
+        events: [],
+      },
+      {
+        dateStr: '20260924',
+        formattedDate: '09/24(木)',
+        events: [{ id: '2', title: '夏休み' }],
+      },
+    ];
+
+    const message = formatGSessionScheduleMessage(mockDays);
+
+    expect(message).toContain('🗓️ *【GroupSession】大沼さんの1週間スケジュール* (09/18(金)〜09/24(木))');
+    expect(message).toContain('📌 *チーム定例*');
+    expect(message).toContain('🇯🇵 _敬老の日_ (予定なし)');
+    expect(message).toContain('🏖️ *夏休み*');
+    expect(message).toContain('🔗 <https://po-tal.poweredge.co.jp/gsession/schedule/sch010.do|GroupSessionスケジュールを開く>');
+  });
+
+  it('handles empty schedule gracefully in formatGSessionScheduleMessage', () => {
+    const emptyMsg = formatGSessionScheduleMessage([]);
+    expect(emptyMsg).toContain('スケジュール情報を取得できませんでした');
+  });
+
+  it('delivers 1-week schedule to manager DM during runWeeklyCheck', async () => {
+    const mockPostMessage = jest.fn().mockResolvedValue({ ok: true });
+    const mockClient = {
+      chat: {
+        postMessage: mockPostMessage,
+      },
+    };
+
+    const service = new WeeklyCheckService();
+    // Spy on internal methods to avoid external network calls
+    jest.spyOn(service, 'checkWeeklyReports').mockResolvedValue({
+      weekLabel: '先週分',
+      submitted: ['大沼　佑麻'],
+      unsubmitted: [],
+      totalMembers: 1,
+    });
+    jest.spyOn(service, 'checkGSessionLogins').mockResolvedValue({
+      inactiveMembers: [],
+      activeMembers: [{ name: '大沼　佑麻', daysSinceLastLogin: 1, isInactive: false }],
+    });
+    jest.spyOn(service, 'fetchWeeklyReportTop').mockResolvedValue(null);
+    jest.spyOn(service, 'fetchGSessionMySchedule').mockResolvedValue([
+      {
+        dateStr: '20260918',
+        formattedDate: '09/18(金)',
+        events: [{ id: '10', title: 'リリース作業' }],
+      },
+    ]);
+
+    const result = await service.runWeeklyCheck(mockClient, 'C_PUBLIC_CHANNEL');
+    expect(result.success).toBe(true);
+
+    // Check that public message was posted to channel
+    expect(mockPostMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: 'C_PUBLIC_CHANNEL',
+      })
+    );
+
+    // Check that schedule was posted strictly to manager DM ('U_ONUMA_123')
+    expect(mockPostMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: 'U_ONUMA_123',
+        text: expect.stringContaining('【GroupSession】大沼さんの1週間スケジュール'),
+      })
+    );
   });
 });
