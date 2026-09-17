@@ -7,7 +7,9 @@ import { buildSubmissionModal } from '../modals/submissionModal';
 export function registerCommandHandlers(app: App) {
   // Command handler for /gw
   app.command('/gw', async ({ command, ack, client }) => {
-    console.log(`[Command] Received /gw from user ${command.user_id} in channel ${command.channel_id}`);
+    console.log(
+      `[Command] Received /gw from user ${command.user_id} in channel ${command.channel_id}`
+    );
     await ack();
 
     try {
@@ -29,7 +31,9 @@ export function registerCommandHandlers(app: App) {
         trigger_id: command.trigger_id,
         view: modalView,
       });
-      console.log(`[Command] Successfully opened modal for trigger_id: ${command.trigger_id}`);
+      console.log(
+        `[Command] Successfully opened modal for trigger_id: ${command.trigger_id}`
+      );
     } catch (error) {
       console.error('Error opening submission modal:', error);
     }

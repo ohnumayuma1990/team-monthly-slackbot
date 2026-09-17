@@ -1,4 +1,4 @@
-import { getSheetsClient } from './client';
+import { getSheetsClient, hasMockSheetsClient } from './client';
 import {
   parseMonthlySheet,
   normalizeName,
@@ -47,9 +47,10 @@ export class SheetsService {
     submission: MonthlySubmission
   ): Promise<{ success: boolean; message: string; updatedRow?: number }> {
     const hasCredentials =
-      Boolean(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL) &&
-      Boolean(process.env.GOOGLE_PRIVATE_KEY) &&
-      Boolean(this.spreadsheetId);
+      (Boolean(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL) &&
+        Boolean(process.env.GOOGLE_PRIVATE_KEY) &&
+        Boolean(this.spreadsheetId)) ||
+      hasMockSheetsClient();
 
     if (!hasCredentials) {
       return {

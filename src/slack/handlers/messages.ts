@@ -64,30 +64,35 @@ export function registerMessageHandlers(app: App) {
   });
 
   // Handle button click action to open the submission modal
-  app.action<BlockAction>(OPEN_MODAL_BUTTON_ACTION_ID, async ({ ack, body, client }) => {
-    await ack();
-    console.log(`[Action] User ${body.user.id} clicked open_monthly_modal_button`);
+  app.action<BlockAction>(
+    OPEN_MODAL_BUTTON_ACTION_ID,
+    async ({ ack, body, client }) => {
+      await ack();
+      console.log(
+        `[Action] User ${body.user.id} clicked open_monthly_modal_button`
+      );
 
-    try {
-      let defaultName = '';
       try {
-        const userInfo = await client.users.info({ user: body.user.id });
-        defaultName =
-          userInfo.user?.profile?.real_name || userInfo.user?.name || '';
-      } catch (e) {
-        console.warn('Failed to retrieve user info on button click:', e);
+        let defaultName = '';
+        try {
+          const userInfo = await client.users.info({ user: body.user.id });
+          defaultName =
+            userInfo.user?.profile?.real_name || userInfo.user?.name || '';
+        } catch (e) {
+          console.warn('Failed to retrieve user info on button click:', e);
+        }
+
+        const modalView = buildSubmissionModal(defaultName);
+        modalView.private_metadata = body.channel?.id || body.user.id;
+
+        await client.views.open({
+          trigger_id: body.trigger_id,
+          view: modalView,
+        });
+        console.log('[Action] Successfully opened modal from button click');
+      } catch (error) {
+        console.error('Error opening modal from button click:', error);
       }
-
-      const modalView = buildSubmissionModal(defaultName);
-      modalView.private_metadata = body.channel?.id || body.user.id;
-
-      await client.views.open({
-        trigger_id: body.trigger_id,
-        view: modalView,
-      });
-      console.log('[Action] Successfully opened modal from button click');
-    } catch (error) {
-      console.error('Error opening modal from button click:', error);
     }
-  });
+  );
 }

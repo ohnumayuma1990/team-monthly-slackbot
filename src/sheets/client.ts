@@ -40,3 +40,7 @@ export function getSheetsClient(): sheets_v4.Sheets {
 export function setMockSheetsClient(client: sheets_v4.Sheets | null) {
   sheetsClientInstance = client;
 }
+
+export function hasMockSheetsClient(): boolean {
+  return sheetsClientInstance !== null;
+}
