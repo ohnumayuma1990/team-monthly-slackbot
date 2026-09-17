@@ -8,8 +8,8 @@ export class GeminiService {
 
   constructor(apiKey?: string, model?: string) {
     this.apiKey = apiKey || process.env.GEMINI_API_KEY || '';
-    // Default to gemini-2.5-flash which has a stable free tier, or allow override via GEMINI_MODEL
-    this.model = model || process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+    // Default to gemini-3.6-flash which is the latest flash model
+    this.model = model || process.env.GEMINI_MODEL || 'gemini-3.6-flash';
   }
 
   /**
