@@ -1,4 +1,4 @@
-﻿/**
+/**
  * scripts/inspect_weekly.js
  * 
  * 週報システム（https://auth.poweredge.co.jp/weekly_report/）へ安全にログインし、
@@ -26,6 +26,46 @@ async function prompt(question) {
       rl.close();
       resolve(ans.trim());
     });
+  });
+}
+
+async function promptPassword(question) {
+  return new Promise((resolve) => {
+    process.stdout.write(question);
+    const stdin = process.stdin;
+    stdin.resume();
+    stdin.setRawMode(true);
+    stdin.setEncoding('utf8');
+    let password = '';
+    const onData = (ch) => {
+      ch = ch.toString('utf8');
+      switch (ch) {
+        case '\n':
+        case '\r':
+        case '\u0004':
+          stdin.setRawMode(false);
+          stdin.pause();
+          stdin.removeListener('data', onData);
+          process.stdout.write('\n');
+          resolve(password.trim());
+          break;
+        case '\u0003':
+          process.exit();
+          break;
+        case '\u007f':
+        case '\b':
+          if (password.length > 0) {
+            password = password.slice(0, -1);
+            process.stdout.write('\b \b');
+          }
+          break;
+        default:
+          password += ch;
+          process.stdout.write('*');
+          break;
+      }
+    };
+    stdin.on('data', onData);
   });
 }
 
@@ -58,10 +98,10 @@ async function main() {
   let password = process.env.WEEKLY_REPORT_PASSWORD || process.env.WEEKLY_REPORT_PASS;
 
   if (!username) {
-    username = await prompt('ユーザー名 (username) を入力してください: ');
+    username = await prompt('ユーザー名 (username / 社員番号): ');
   }
   if (!password) {
-    password = await prompt('パスワード (password) を入力してください: ');
+    password = await promptPassword('パスワード (password): ');
   }
 
   if (!username || !password) {
@@ -86,46 +126,59 @@ async function main() {
   const postBody = new URLSearchParams();
   postBody.append('username', username);
   postBody.append('password', password);
-  postBody.append('remember-me', 'yes');
 
-  const loginRes = await fetch(baseUrl, {
+  const loginUrl = 'https://auth.poweredge.co.jp/weekly_report/login';
+  let currentRes = await fetch(loginUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
+      'Origin': 'https://auth.poweredge.co.jp',
+      'Referer': 'https://auth.poweredge.co.jp/weekly_report/login',
       'Cookie': getCookieString(cookies),
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     },
+    body: postBody.toString(),
     redirect: 'manual',
   });
 
-  const loginSetCookie = loginRes.headers.getSetCookie ? loginRes.headers.getSetCookie() : [loginRes.headers.get('set-cookie')].filter(Boolean);
-  parseCookies(loginSetCookie, cookies);
+  console.log(`   HTTPステータス: ${currentRes.status} (${currentRes.statusText})`);
 
-  console.log(`   HTTPステータス: ${loginRes.status} (${loginRes.statusText})`);
+  // リダイレクトチェーン（login -> loginSuccess -> top）をCookieを保持して追跡
+  let currentUrl = loginUrl;
+  let redirectCount = 0;
 
-  let targetUrl = baseUrl;
-  if (loginRes.status === 302 || loginRes.status === 303 || loginRes.status === 301) {
-    const redirectLocation = loginRes.headers.get('location');
-    targetUrl = new URL(redirectLocation, baseUrl).href;
-    console.log(`   ➡️ リダイレクト先: ${targetUrl}`);
+  while (currentRes.status >= 300 && currentRes.status < 400 && redirectCount < 5) {
+    const setCookie = currentRes.headers.getSetCookie ? currentRes.headers.getSetCookie() : [currentRes.headers.get('set-cookie')].filter(Boolean);
+    parseCookies(setCookie, cookies);
+
+    const location = currentRes.headers.get('location');
+    if (!location) break;
+
+    currentUrl = new URL(location, currentUrl).href;
+    console.log(`   ➡️ リダイレクト先 (${currentRes.status}): ${currentUrl}`);
+
+    currentRes = await fetch(currentUrl, {
+      headers: {
+        'Cookie': getCookieString(cookies),
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': currentUrl,
+      },
+      redirect: 'manual',
+    });
+    redirectCount++;
   }
 
-  console.log(`\n3. ログイン後ページを取得中: ${targetUrl}`);
-  const pageRes = await fetch(targetUrl, {
-    headers: {
-      'Cookie': getCookieString(cookies),
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    },
-  });
+  const finalSetCookie = currentRes.headers.getSetCookie ? currentRes.headers.getSetCookie() : [currentRes.headers.get('set-cookie')].filter(Boolean);
+  parseCookies(finalSetCookie, cookies);
 
-  const pageHtml = await pageRes.text();
+  const pageHtml = await currentRes.text();
 
   // ログイン成否の簡易判定
-  if (pageHtml.includes('ユーザー名またはパスワードが違います') || pageHtml.includes('id="loginForm"')) {
+  if (pageHtml.includes('ユーザー名またはパスワードが違います') || pageHtml.includes('id="loginForm"') || currentUrl.includes('login?error')) {
     console.error('\n❌ ログインに失敗した可能性があります（ログイン画面またはエラーが表示されています）。');
     console.error('   ユーザー名・パスワードをご確認ください。');
   } else {
-    console.log('\n🎉 ログイン成功！画面の解析結果:');
+    console.log(`\n🎉 ログイン成功！画面の取得完了 (${currentUrl})`);
   }
 
   // タイトル抽出

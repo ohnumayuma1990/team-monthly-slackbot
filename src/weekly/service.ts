@@ -108,45 +108,62 @@ export class WeeklyCheckService {
 
     try {
       // Authenticate with weekly report portal
-      const baseUrl = 'https://auth.poweredge.co.jp/weekly_report/';
-      const loginRes = await fetch(baseUrl, {
+      const loginUrl = 'https://auth.poweredge.co.jp/weekly_report/login';
+      const cookies = new Map<string, string>();
+
+      let currentRes = await fetch(loginUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
+          'Origin': 'https://auth.poweredge.co.jp',
+          'Referer': 'https://auth.poweredge.co.jp/weekly_report/login',
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         },
         body: new URLSearchParams({
           username: this.weeklyUser,
           password: this.weeklyPass,
-          'remember-me': 'yes',
         }).toString(),
         redirect: 'manual',
       });
 
-      const setCookie = loginRes.headers.get('set-cookie') || '';
-      const targetUrl = loginRes.headers.get('location') || baseUrl;
-      const pageRes = await fetch(new URL(targetUrl, baseUrl).href, {
-        headers: { Cookie: setCookie },
-      });
-      const pageHtml = await pageRes.text();
+      let currentUrl = loginUrl;
+      let redirectCount = 0;
 
-      const submitted: string[] = [];
-      const unsubmitted: string[] = [];
-
-      for (const member of ONUMA_TEAM_MEMBERS) {
-        // If member name appears in the page in a submitted context
-        if (isNameMatchInHtml(member, pageHtml)) {
-          submitted.push(member);
-        } else {
-          unsubmitted.push(member);
+      while (
+        currentRes.status >= 300 &&
+        currentRes.status < 400 &&
+        redirectCount < 5
+      ) {
+        const rawSetCookie = currentRes.headers.get('set-cookie') || '';
+        for (const c of rawSetCookie.split(',')) {
+          const part = c.split(';')[0].trim();
+          const [k, v] = part.split('=');
+          if (k && v) cookies.set(k.trim(), v.trim());
         }
+
+        const location = currentRes.headers.get('location');
+        if (!location) break;
+
+        currentUrl = new URL(location, currentUrl).href;
+        const cookieStr = Array.from(cookies.entries())
+          .map(([k, v]) => `${k}=${v}`)
+          .join('; ');
+
+        currentRes = await fetch(currentUrl, {
+          headers: {
+            Cookie: cookieStr,
+            Referer: currentUrl,
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          },
+          redirect: 'manual',
+        });
+        redirectCount++;
       }
 
-      return {
-        weekLabel: '先週分',
-        submitted,
-        unsubmitted,
-        totalMembers: ONUMA_TEAM_MEMBERS.length,
-      };
+      const pageHtml = await currentRes.text();
+      return parseWeeklyReportTopHtml(pageHtml);
     } catch (err) {
       console.error('Failed to fetch weekly report status:', err);
       return {
@@ -359,6 +376,96 @@ export class WeeklyCheckService {
 
 function isNameMatchInHtml(name: string, html: string): boolean {
   return html.includes(name) || html.includes(name.replace(/\s+/g, ''));
+}
+
+/**
+ * Parses WeeklyReport top page HTML and computes submission status for Onuma team.
+ */
+export function parseWeeklyReportTopHtml(
+  html: string
+): WeeklyReportCheckResult {
+  let weekLabel = '先週分';
+  const deadlineMatch = html.match(
+    /([\d\/]+\s*[\d:]+)\s*<\/label>\s*<label[^>]*>締切りの週報<\/label>[\s\S]*?対象期間[：:]\s*<\/label>\s*<label>\s*([\d\/]+)\s*<\/label>\s*<label>\s*[～~]\s*<\/label>\s*<label>\s*([\d\/]+)/i
+  );
+  if (deadlineMatch) {
+    weekLabel = `${deadlineMatch[1].trim()} 締切 (${deadlineMatch[2].trim()}〜${deadlineMatch[3].trim()})`;
+  }
+
+  const startIdx = html.indexOf('var filingData = ');
+  if (startIdx === -1) {
+    const submitted: string[] = [];
+    const unsubmitted: string[] = [];
+    for (const member of ONUMA_TEAM_MEMBERS) {
+      if (isNameMatchInHtml(member, html)) {
+        submitted.push(member);
+      } else {
+        unsubmitted.push(member);
+      }
+    }
+    return {
+      weekLabel,
+      submitted,
+      unsubmitted,
+      totalMembers: ONUMA_TEAM_MEMBERS.length,
+    };
+  }
+
+  const endIdx = html.indexOf(';\n', startIdx);
+  const jsonStr = html
+    .substring(
+      startIdx + 'var filingData = '.length,
+      endIdx !== -1 ? endIdx : undefined
+    )
+    .trim()
+    .replace(/;\s*$/, '');
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let filingData: any[] = [];
+  try {
+    const fn = new Function('return ' + jsonStr);
+    filingData = fn();
+  } catch (e) {
+    console.warn('Failed to parse filingData from HTML:', e);
+  }
+
+  const submitted: string[] = [];
+  const unsubmitted: string[] = [];
+
+  for (const member of ONUMA_TEAM_MEMBERS) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const record = filingData.find(
+      (f: any) => f.staffName && isNameMatch(f.staffName, member)
+    );
+
+    if (!record) {
+      unsubmitted.push(member);
+      continue;
+    }
+
+    let unsubCount = 0;
+    if (Array.isArray(record.unsubmittedCount)) {
+      for (const item of record.unsubmittedCount) {
+        if (item[0] === record.staffId) {
+          unsubCount = item[1];
+          break;
+        }
+      }
+    }
+
+    if (unsubCount > 0 || !record.filingDatetime) {
+      unsubmitted.push(member);
+    } else {
+      submitted.push(member);
+    }
+  }
+
+  return {
+    weekLabel,
+    submitted,
+    unsubmitted,
+    totalMembers: ONUMA_TEAM_MEMBERS.length,
+  };
 }
 
 function parseMemberLoginStatus(

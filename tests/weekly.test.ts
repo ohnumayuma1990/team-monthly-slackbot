@@ -1,4 +1,4 @@
-﻿import { WeeklyCheckService } from '../src/weekly/service';
+import { WeeklyCheckService, parseWeeklyReportTopHtml } from '../src/weekly/service';
 import { WeeklyCheckSummary } from '../src/types';
 
 describe('WeeklyCheckService', () => {
@@ -94,5 +94,31 @@ describe('WeeklyCheckService', () => {
 
     expect(message).toContain('【定期チェック完了】大沼チーム全員が週報提出済み＆GSログイン確認済みです！');
     expect(message).not.toContain('【要確認】');
+  });
+
+  it('accurately parses real WeeklyReport top page HTML with filingData and unsubmittedCount', () => {
+    const mockTopHtml = `
+      <html>
+      <head>
+        <script>
+        09/15 23:59:00 </label><label for="reportingDate">締切りの週報</label>
+        <div><label>(対象期間：</label><label>09/06</label><label> ～</label><label>09/12</label></div>
+        var filingData = [
+          { staffId: 100, staffName: '大沼　佑麻', staffNum: '000100', filingDatetime: '2026-09-15 19:37:24', unsubmittedCount: [] },
+          { staffId: 156, staffName: '小川　智矢', staffNum: '000156', filingDatetime: '2026-09-15 20:47:01', unsubmittedCount: [[156, 2]] },
+          { staffId: 320, staffName: '朝岡　拓人', staffNum: '000320', filingDatetime: '2026-09-15 17:30:14', unsubmittedCount: [] },
+          { staffId: 526, staffName: '川上　慶太', staffNum: '000526', filingDatetime: '2026-09-15 18:15:11', unsubmittedCount: [[526, 2]] }
+        ];
+        </script>
+      </head>
+      </html>
+    `;
+
+    const result = parseWeeklyReportTopHtml(mockTopHtml);
+
+    expect(result.weekLabel).toContain('09/15 23:59:00 締切');
+    expect(result.unsubmitted).toContain('小川　智矢');
+    expect(result.unsubmitted).toContain('川上　慶太');
+    expect(result.submitted).toContain('朝岡　拓人');
   });
 });

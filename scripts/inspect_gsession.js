@@ -29,6 +29,46 @@ async function prompt(question) {
   });
 }
 
+async function promptPassword(question) {
+  return new Promise((resolve) => {
+    process.stdout.write(question);
+    const stdin = process.stdin;
+    stdin.resume();
+    stdin.setRawMode(true);
+    stdin.setEncoding('utf8');
+    let password = '';
+    const onData = (ch) => {
+      ch = ch.toString('utf8');
+      switch (ch) {
+        case '\n':
+        case '\r':
+        case '\u0004':
+          stdin.setRawMode(false);
+          stdin.pause();
+          stdin.removeListener('data', onData);
+          process.stdout.write('\n');
+          resolve(password.trim());
+          break;
+        case '\u0003':
+          process.exit();
+          break;
+        case '\u007f':
+        case '\b':
+          if (password.length > 0) {
+            password = password.slice(0, -1);
+            process.stdout.write('\b \b');
+          }
+          break;
+        default:
+          password += ch;
+          process.stdout.write('*');
+          break;
+      }
+    };
+    stdin.on('data', onData);
+  });
+}
+
 function parseCookies(cookieHeaders, existingCookies = new Map()) {
   if (!cookieHeaders) return existingCookies;
   const list = Array.isArray(cookieHeaders) ? cookieHeaders : [cookieHeaders];
@@ -61,7 +101,7 @@ async function main() {
     username = await prompt('GroupSession ユーザーID (cmn001Userid): ');
   }
   if (!password) {
-    password = await prompt('GroupSession パスワード (cmn001Passwd): ');
+    password = await promptPassword('GroupSession パスワード (cmn001Passwd): ');
   }
 
   if (!username || !password) {
