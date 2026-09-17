@@ -1,4 +1,4 @@
-﻿/**
+/**
  * scripts/inspect_gsession.js
  * 
  * GroupSession（https://po-tal.poweredge.co.jp/gsession/common/cmn001.do）へ安全にログインし、
@@ -185,8 +185,55 @@ async function main() {
   // HTMLの保存
   const outPath = path.join(__dirname, 'gsession_main.html');
   fs.writeFileSync(outPath, pageHtml, 'utf-8');
-  console.log(`\n💾 解析用HTMLを保存しました: ${outPath}`);
-  console.log('   （※このファイルは.gitignoreによりGitにはコミットされません）');
+  console.log(`\n💾 メインポータルHTMLを保存しました: ${outPath}`);
+
+  // 4. ログイン履歴・ユーザ一覧画面の調査
+  console.log('\n4. ログイン履歴・ユーザ一覧機能の探索中...');
+  const probeUrls = [
+    { name: 'ログイン履歴 (man050.do)', path: '/gsession/main/man050.do' },
+    { name: 'ユーザ情報一覧 (usr040.do)', path: '/gsession/user/usr040.do' },
+    { name: 'メイン管理者設定 (man002.do)', path: '/gsession/main/man002.do' },
+  ];
+
+  for (const probe of probeUrls) {
+    const pUrl = new URL(probe.path, loginUrl).href;
+    try {
+      const pRes = await fetch(pUrl, {
+        headers: {
+          Cookie: getCookieString(cookies),
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+      });
+      if (pRes.status === 200) {
+        const pHtml = await pRes.text();
+        const pTitle =
+          (pHtml.match(/<title>([\s\S]*?)<\/title>/i) || [])[1] || '';
+        const hasHistory =
+          pHtml.includes('ログイン') ||
+          pHtml.includes('最終ログイン') ||
+          pHtml.includes('日時');
+        console.log(`   ✅ アクセス成功: ${probe.name} (タイトル: ${pTitle.trim()})`);
+        if (hasHistory) {
+          console.log(`      💡 ログイン関連情報のキーワードを検出しました！`);
+          const probeOutPath = path.join(
+            __dirname,
+            `gsession_${path.basename(probe.path, '.do')}.html`
+          );
+          fs.writeFileSync(probeOutPath, pHtml, 'utf-8');
+          console.log(`      💾 画面HTMLを保存: ${probeOutPath}`);
+        }
+      } else {
+        console.log(`   ⚠️ ステータス ${pRes.status}: ${probe.name}`);
+      }
+    } catch (e) {
+      console.log(`   ⚠️ エラー: ${probe.name} (${e.message})`);
+    }
+  }
+
+  console.log('\n========================================================');
+  console.log('   解析完了！保存されたHTMLファイルを元に自動化を設計します');
+  console.log('========================================================');
 }
 
 main().catch((err) => {
