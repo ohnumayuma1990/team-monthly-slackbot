@@ -52,11 +52,17 @@ export function createSlackApp(): CreateAppResult {
     });
   } else {
     // HTTP Mode for Cloud Run
-    // Use Bolt's HTTPReceiver with custom routes for Cloud Scheduler and health checks
+    const hasValidSigningSecret = Boolean(
+      signingSecret &&
+      signingSecret !== 'placeholder-signing-secret' &&
+      signingSecret !== 'dummy-signing-secret'
+    );
+
     const receiver = new HTTPReceiver({
       signingSecret: signingSecret || 'placeholder-signing-secret',
       port: Number(process.env.PORT) || 8080,
       customRoutes: [],
+      signatureVerification: hasValidSigningSecret,
     });
 
     app = new App({
