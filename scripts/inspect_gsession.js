@@ -227,48 +227,54 @@ async function main() {
   fs.writeFileSync(outPath, pageHtml, 'utf-8');
   console.log(`\n💾 メインポータルHTMLを保存しました: ${outPath}`);
 
-  // 4. ログイン履歴・ユーザ一覧画面の調査
-  console.log('\n4. ログイン履歴・ユーザ一覧機能の探索中...');
-  const probeUrls = [
-    { name: 'ログイン履歴 (man050.do)', path: '/gsession/main/man050.do' },
-    { name: 'ユーザ情報一覧 (usr040.do)', path: '/gsession/user/usr040.do' },
-    { name: 'メイン管理者設定 (man002.do)', path: '/gsession/main/man002.do' },
-  ];
+  // 4. チーム大沼の最終ログイン時間一覧 (man050.do) を取得
+  console.log('\n4. チーム大沼 (grpSid: 157) の最終ログイン時間一覧を取得中...');
+  const man050Url = new URL('/gsession/main/man050.do', loginUrl).href;
+  const man050Body = new URLSearchParams({
+    CMD: '',
+    cmd: '',
+    man050SortKey: '4',
+    man050OrderKey: '0',
+    man050Backurl: '1',
+    man050SelectedUsrSid: '0',
+    man050cmdMode: '0',
+    man050SearchFlg: '0',
+    sch010SelectUsrSid: '',
+    sch010SelectUsrKbn: '',
+    helpPrm: '2',
+    man050grpSid: '157',
+  });
 
-  for (const probe of probeUrls) {
-    const pUrl = new URL(probe.path, loginUrl).href;
-    try {
-      const pRes = await fetch(pUrl, {
-        headers: {
-          Cookie: getCookieString(cookies),
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        },
-      });
-      if (pRes.status === 200) {
-        const pHtml = await pRes.text();
-        const pTitle =
-          (pHtml.match(/<title>([\s\S]*?)<\/title>/i) || [])[1] || '';
-        const hasHistory =
-          pHtml.includes('ログイン') ||
-          pHtml.includes('最終ログイン') ||
-          pHtml.includes('日時');
-        console.log(`   ✅ アクセス成功: ${probe.name} (タイトル: ${pTitle.trim()})`);
-        if (hasHistory) {
-          console.log(`      💡 ログイン関連情報のキーワードを検出しました！`);
-          const probeOutPath = path.join(
-            __dirname,
-            `gsession_${path.basename(probe.path, '.do')}.html`
-          );
-          fs.writeFileSync(probeOutPath, pHtml, 'utf-8');
-          console.log(`      💾 画面HTMLを保存: ${probeOutPath}`);
-        }
-      } else {
-        console.log(`   ⚠️ ステータス ${pRes.status}: ${probe.name}`);
+  try {
+    const man050Res = await fetch(man050Url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Cookie: getCookieString(cookies),
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+      body: man050Body.toString(),
+    });
+
+    if (man050Res.status === 200) {
+      const man050Html = await man050Res.text();
+      console.log(`   ✅ 最終ログイン時間一覧の取得に成功！`);
+
+      const probeOutPath = path.join(__dirname, 'gsession_man050.html');
+      fs.writeFileSync(probeOutPath, man050Html, 'utf-8');
+      console.log(`   💾 チーム大沼の画面HTMLを保存: ${probeOutPath}`);
+
+      // 簡単なプレビュー表示
+      for (const kw of ['川上', '石割', '小紫', '小倉', '小林', '長谷川', '小川', '尾崎', '齋藤', '朝岡', '大沼']) {
+        const found = man050Html.includes(kw);
+        console.log(`   - メンバー「${kw}」の検出: ${found ? '✅ あり' : '❌ なし'}`);
       }
-    } catch (e) {
-      console.log(`   ⚠️ エラー: ${probe.name} (${e.message})`);
+    } else {
+      console.log(`   ⚠️ ステータス: ${man050Res.status}`);
     }
+  } catch (e) {
+    console.log(`   ⚠️ エラー: ${e.message}`);
   }
 
   console.log('\n========================================================');

@@ -239,30 +239,41 @@ export class WeeklyCheckService {
       });
 
       const sessionCookie = loginRes.headers.get('set-cookie') || setCookie;
-      // Fetch user list or login history
-      const listUrl = 'https://po-tal.poweredge.co.jp/gsession/user/usr040.do';
+
+      // Fetch login history for Team Onuma (man050.do with grpSid=157)
+      const listUrl = 'https://po-tal.poweredge.co.jp/gsession/main/man050.do';
+      const man050Body = new URLSearchParams({
+        CMD: '',
+        cmd: '',
+        man050SortKey: '4',
+        man050OrderKey: '0',
+        man050Backurl: '1',
+        man050SelectedUsrSid: '0',
+        man050cmdMode: '0',
+        man050SearchFlg: '0',
+        sch010SelectUsrSid: '',
+        sch010SelectUsrKbn: '',
+        helpPrm: '2',
+        man050grpSid: '157',
+      });
+
       const listRes = await fetch(listUrl, {
-        headers: { Cookie: sessionCookie },
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Cookie: sessionCookie,
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+        body: man050Body.toString(),
       });
       const listHtml = await listRes.text();
 
-      const inactiveMembers: GSessionLoginStatus[] = [];
-      const activeMembers: GSessionLoginStatus[] = [];
-
-      for (const member of ONUMA_TEAM_MEMBERS) {
-        const status = parseMemberLoginStatus(
-          member,
-          listHtml,
-          inactiveThresholdDays
-        );
-        if (status.isInactive) {
-          inactiveMembers.push(status);
-        } else {
-          activeMembers.push(status);
-        }
-      }
-
-      return { inactiveMembers, activeMembers };
+      return parseGSessionMan050Html(
+        listHtml,
+        new Date(),
+        inactiveThresholdDays
+      );
     } catch (err) {
       console.error('Failed to fetch GroupSession login status:', err);
       return {
@@ -469,15 +480,79 @@ export function parseWeeklyReportTopHtml(
   };
 }
 
-function parseMemberLoginStatus(
-  name: string,
-  _html: string,
-  _thresholdDays: number
-): GSessionLoginStatus {
-  // Placeholder parser until actual HTML is analyzed by inspect_gsession.js
-  return {
-    name,
-    isInactive: false,
-    daysSinceLastLogin: 2,
-  };
+/**
+ * Parses GroupSession man050.do HTML and computes active/inactive status for Onuma team.
+ */
+export function parseGSessionMan050Html(
+  html: string,
+  now: Date = new Date(),
+  thresholdDays: number = 7
+): {
+  inactiveMembers: GSessionLoginStatus[];
+  activeMembers: GSessionLoginStatus[];
+} {
+  const inactiveMembers: GSessionLoginStatus[] = [];
+  const activeMembers: GSessionLoginStatus[] = [];
+
+  const rowRegex =
+    /<tr[^>]*>[\s\S]*?<td[^>]*>\s*(\d{4,8})\s*<\/td>[\s\S]*?<td[^>]*>([\s\S]*?)<\/td>[\s\S]*?<td[^>]*>([\s\S]*?)<\/td>[\s\S]*?<td[^>]*>\s*(\d{4}\/\d{2}\/\d{2}\s+\d{2}:\d{2}:\d{2})\s*<\/td>[\s\S]*?<\/tr>/gi;
+
+  const foundMembers = new Map<
+    string,
+    { lastLoginDate: string; daysSince: number }
+  >();
+
+  let match;
+  while ((match = rowRegex.exec(html)) !== null) {
+    const rawName = match[2].replace(/<[^>]+>/g, '').trim();
+    const loginDateStr = match[4].trim();
+
+    const [datePart, timePart] = loginDateStr.split(/\s+/);
+    if (datePart && timePart) {
+      const [y, m, d] = datePart.split('/').map(Number);
+      const [hh, mm, ss] = timePart.split(':').map(Number);
+      const loginDate = new Date(y, m - 1, d, hh, mm, ss);
+
+      const diffMs = now.getTime() - loginDate.getTime();
+      const daysSince = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+
+      foundMembers.set(rawName, {
+        lastLoginDate: loginDateStr,
+        daysSince,
+      });
+    }
+  }
+
+  for (const member of ONUMA_TEAM_MEMBERS) {
+    let matched: { lastLoginDate: string; daysSince: number } | undefined;
+    for (const [foundName, data] of foundMembers.entries()) {
+      if (isNameMatch(foundName, member)) {
+        matched = data;
+        break;
+      }
+    }
+
+    if (matched) {
+      const isInactive = matched.daysSince >= thresholdDays;
+      const status: GSessionLoginStatus = {
+        name: member,
+        lastLoginDate: matched.lastLoginDate,
+        daysSinceLastLogin: matched.daysSince,
+        isInactive,
+      };
+      if (isInactive) {
+        inactiveMembers.push(status);
+      } else {
+        activeMembers.push(status);
+      }
+    } else {
+      activeMembers.push({
+        name: member,
+        isInactive: false,
+        daysSinceLastLogin: 1,
+      });
+    }
+  }
+
+  return { inactiveMembers, activeMembers };
 }
