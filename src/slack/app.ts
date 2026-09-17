@@ -37,7 +37,7 @@ export function createSlackApp(): CreateAppResult {
   const sheetsService = new SheetsService();
   const reminderService = new ReminderService(sheetsService);
   const geminiService = new GeminiService();
-  const weeklyService = new WeeklyCheckService();
+  const weeklyService = new WeeklyCheckService(geminiService);
 
   let app: App;
 

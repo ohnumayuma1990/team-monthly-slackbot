@@ -2,8 +2,10 @@ import {
   WeeklyCheckService,
   parseWeeklyReportTopHtml,
   parseGSessionMan050Html,
+  extractSubmittedStaffRecords,
 } from '../src/weekly/service';
-import { WeeklyCheckSummary } from '../src/types';
+import { WeeklyCheckSummary, WeeklyReportContent } from '../src/types';
+import { GeminiService } from '../src/ai/gemini';
 
 describe('WeeklyCheckService', () => {
   const originalEnv = process.env;
@@ -172,5 +174,70 @@ describe('WeeklyCheckService', () => {
     const ogawa = result.activeMembers.find((m) => m.name.includes('小川'));
     expect(ogawa).toBeDefined();
     expect(ogawa?.isInactive).toBe(false);
+  });
+
+  it('extracts submitted staff records with staffId and targetDateId from filingData', () => {
+    const mockTopHtml = `
+      var filingData = [
+        { staffId: 121, staffName: '小川　智矢', filingDatetime: '2026-09-15 20:47:01', newestWrTargetDateId: 734 },
+        { staffId: 381, staffName: '小林　弘和', filingDatetime: '2026-09-15 18:20:51', latestWrTargetDateId: 735 },
+        { staffId: 273, staffName: '朝岡　拓人', filingDatetime: null, newestWrTargetDateId: 734 },
+        { staffId: 489, staffName: '川上　慶太', filingDatetime: '', newestWrTargetDateId: 734 }
+      ];
+    `;
+
+    const records = extractSubmittedStaffRecords(mockTopHtml);
+    expect(records.length).toBe(2);
+
+    const ogawa = records.find((r) => r.staffName === '小川　智矢');
+    expect(ogawa).toBeDefined();
+    expect(ogawa?.staffId).toBe(121);
+    expect(ogawa?.wrTargetDateId).toBe(734);
+
+    const kobayashi = records.find((r) => r.staffName === '小林　弘和');
+    expect(kobayashi).toBeDefined();
+    expect(kobayashi?.staffId).toBe(381);
+    expect(kobayashi?.wrTargetDateId).toBe(735);
+  });
+
+  it('sends private manager summary strictly to manager Slack ID (DM)', async () => {
+    const mockPostMessage = jest.fn().mockResolvedValue({ ok: true });
+    const mockClient = {
+      chat: {
+        postMessage: mockPostMessage,
+      },
+    };
+
+    const mockGemini = new GeminiService('test-api-key');
+    jest.spyOn(mockGemini, 'generateWeeklyReportsSummary').mockResolvedValue(
+      '🔒 *【マネージャー専用・非公開】週報AI要約レポート*\nテスト要約内容'
+    );
+
+    const service = new WeeklyCheckService(mockGemini);
+    const mockReports: WeeklyReportContent[] = [
+      {
+        staffId: 121,
+        staffName: '小川　智矢',
+        impression: '順調に進捗しています。',
+        weekUptime: 40,
+        projects: [
+          { properName: 'テスト案件', endUser: 'テスト顧客', prjDetail: '開発業務' },
+        ],
+      },
+    ];
+
+    const result = await service.sendManagerPrivateSummary(
+      mockClient,
+      '先週分',
+      mockReports
+    );
+
+    expect(result.success).toBe(true);
+    expect(mockPostMessage).toHaveBeenCalledTimes(1);
+    // Crucial check: channel must be the manager's Slack ID ('U_ONUMA_123'), NOT a public channel!
+    expect(mockPostMessage).toHaveBeenCalledWith({
+      channel: 'U_ONUMA_123',
+      text: expect.stringContaining('【マネージャー専用・非公開】週報AI要約レポート'),
+    });
   });
 });

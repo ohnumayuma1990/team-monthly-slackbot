@@ -71,3 +71,24 @@ export interface WeeklyCheckSummary {
   };
 }
 
+export interface ProjectReportDetail {
+  properName: string;
+  endUser: string;
+  prjDetail: string;
+}
+
+export interface WeeklyReportContent {
+  staffId: number;
+  staffName: string;
+  impression: string;
+  weekUptime?: string | number;
+  projects: ProjectReportDetail[];
+}
+
+export interface WeeklySummaryResult {
+  weekLabel: string;
+  summaryText: string;
+  submittedCount: number;
+  totalMembers: number;
+}
+

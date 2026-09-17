@@ -166,6 +166,31 @@ export function registerCommandHandlers(
       });
     }
   });
+
+  // Command handler for /weekly-summary (AI Weekly Report Summary - Private for Manager)
+  app.command('/weekly-summary', async ({ command, ack, respond, client }) => {
+    await ack();
+
+    await respond({
+      response_type: 'ephemeral',
+      text: '⏳ 最新の提出済み週報を取得し、Gemini AIで要約を作成しています... 少々お待ちください。',
+    });
+
+    try {
+      const result = await weeklyService.runWeeklySummary(client, command.user_id);
+      await respond({
+        response_type: 'ephemeral',
+        text: `✅ 週報AI要約を作成し、DMへ非公開送信しました！\n\n${result.summaryText}`,
+      });
+    } catch (err: unknown) {
+      console.error('Error in /weekly-summary command:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      await respond({
+        response_type: 'ephemeral',
+        text: `⚠️ 週報AI要約の作成中にエラーが発生しました:\n${msg}`,
+      });
+    }
+  });
 }
 
 

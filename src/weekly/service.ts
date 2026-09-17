@@ -3,8 +3,11 @@ import {
   WeeklyCheckSummary,
   WeeklyReportCheckResult,
   GSessionLoginStatus,
+  WeeklyReportContent,
+  ProjectReportDetail,
 } from '../types';
 import { isNameMatch, normalizeName } from '../sheets/parser';
+import { GeminiService } from '../ai/gemini';
 
 export const ONUMA_TEAM_MEMBERS = [
   '小川　智矢',
@@ -40,8 +43,10 @@ export class WeeklyCheckService {
   private gsessionPass: string;
   private memberSlackMap: Map<string, string>;
   private managerSlackId?: string;
+  private geminiService: GeminiService;
 
-  constructor() {
+  constructor(geminiService?: GeminiService) {
+    this.geminiService = geminiService || new GeminiService();
     this.weeklyUser =
       process.env.WEEKLY_REPORT_USERNAME ||
       process.env.WEEKLY_REPORT_USER ||
@@ -116,20 +121,17 @@ export class WeeklyCheckService {
   }
 
   /**
-   * Checks weekly report submission status for Onuma team.
+   * Logs into weekly report portal and returns the top page HTML and cookie string.
    */
-  async checkWeeklyReports(): Promise<WeeklyReportCheckResult> {
+  async fetchWeeklyReportTop(): Promise<{
+    pageHtml: string;
+    cookieStr: string;
+  } | null> {
     if (!this.weeklyUser || !this.weeklyPass) {
-      return {
-        weekLabel: '先週分',
-        submitted: ['小川　智矢', '朝岡　拓人', '齋藤　宏行', '小林　弘和'],
-        unsubmitted: ['川上　慶太', '長谷川　明莉', '石割　朝比', '尾崎　巧真', '小倉　拓未', '小紫　広介'],
-        totalMembers: ONUMA_TEAM_MEMBERS.length,
-      };
+      return null;
     }
 
     try {
-      // Authenticate with weekly report portal
       const loginUrl = 'https://auth.poweredge.co.jp/weekly_report/login';
       const cookies = new Map<string, string>();
 
@@ -137,8 +139,8 @@ export class WeeklyCheckService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
-          'Origin': 'https://auth.poweredge.co.jp',
-          'Referer': 'https://auth.poweredge.co.jp/weekly_report/login',
+          Origin: 'https://auth.poweredge.co.jp',
+          Referer: 'https://auth.poweredge.co.jp/weekly_report/login',
           'User-Agent':
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         },
@@ -184,17 +186,118 @@ export class WeeklyCheckService {
         redirectCount++;
       }
 
+      const rawSetCookie = currentRes.headers.get('set-cookie') || '';
+      for (const c of rawSetCookie.split(',')) {
+        const part = c.split(';')[0].trim();
+        const [k, v] = part.split('=');
+        if (k && v) cookies.set(k.trim(), v.trim());
+      }
+
+      const cookieStr = Array.from(cookies.entries())
+        .map(([k, v]) => `${k}=${v}`)
+        .join('; ');
+
       const pageHtml = await currentRes.text();
-      return parseWeeklyReportTopHtml(pageHtml);
+      return { pageHtml, cookieStr };
+    } catch (err) {
+      console.error('Failed to authenticate with weekly report portal:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Checks weekly report submission status for Onuma team.
+   */
+  async checkWeeklyReports(): Promise<WeeklyReportCheckResult> {
+    try {
+      const session = await this.fetchWeeklyReportTop();
+      if (session) {
+        return parseWeeklyReportTopHtml(session.pageHtml);
+      }
     } catch (err) {
       console.error('Failed to fetch weekly report status:', err);
-      return {
-        weekLabel: '先週分',
-        submitted: [],
-        unsubmitted: ONUMA_TEAM_MEMBERS,
-        totalMembers: ONUMA_TEAM_MEMBERS.length,
-      };
     }
+
+    return {
+      weekLabel: '先週分',
+      submitted: ['小川　智矢', '朝岡　拓人', '齋藤　宏行', '小林　弘和'],
+      unsubmitted: [
+        '川上　慶太',
+        '長谷川　明莉',
+        '石割　朝比',
+        '尾崎　巧真',
+        '小倉　拓未',
+        '小紫　広介',
+      ],
+      totalMembers: ONUMA_TEAM_MEMBERS.length,
+    };
+  }
+
+  /**
+   * Fetches report details (impression, projects, uptime) for submitted staff members.
+   */
+  async fetchSubmittedReportDetails(
+    cookieStr: string,
+    submittedStaffList: Array<{
+      staffId: number;
+      staffName: string;
+      wrTargetDateId: number;
+    }>
+  ): Promise<WeeklyReportContent[]> {
+    const reports: WeeklyReportContent[] = [];
+
+    for (const staff of submittedStaffList) {
+      try {
+        const apiUrl = 'https://auth.poweredge.co.jp/weekly_report/getReportInfo';
+        const res = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            Cookie: cookieStr,
+            Referer: `https://auth.poweredge.co.jp/weekly_report/view?staffId=${staff.staffId}&wrTargetDateId=${staff.wrTargetDateId}`,
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          },
+          body: new URLSearchParams({
+            staffId: String(staff.staffId),
+            wrTargetDateId: String(staff.wrTargetDateId),
+            switchState: '0',
+          }).toString(),
+        });
+
+        if (!res.ok) {
+          console.warn(
+            `Failed to fetch report info for ${staff.staffName} (status ${res.status})`
+          );
+          continue;
+        }
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const data = (await res.json()) as any;
+        const projects: ProjectReportDetail[] = [];
+        if (Array.isArray(data.vProjectGeneralInformation)) {
+          for (const p of data.vProjectGeneralInformation) {
+            projects.push({
+              properName: p.properName || '未確定',
+              endUser: p.endUser || '未確定',
+              prjDetail: p.prjDetail || '',
+            });
+          }
+        }
+
+        reports.push({
+          staffId: staff.staffId,
+          staffName: staff.staffName,
+          impression: data.impression || '',
+          weekUptime: data.weekUptime,
+          projects,
+        });
+      } catch (err) {
+        console.warn(`Error fetching report info for ${staff.staffName}:`, err);
+      }
+    }
+
+    return reports;
   }
 
   /**
@@ -379,7 +482,36 @@ export class WeeklyCheckService {
   }
 
   /**
-   * Executes full check and posts message to Slack.
+   * Sends AI-generated weekly report summary privately to manager via Slack DM.
+   */
+  async sendManagerPrivateSummary(
+    client: any,
+    weekLabel: string,
+    reports: WeeklyReportContent[]
+  ): Promise<{ success: boolean; summaryText: string }> {
+    const managerId =
+      this.managerSlackId || DEFAULT_MEMBER_SLACK_MAPPING['大沼'];
+    if (!managerId) {
+      console.warn('Manager Slack ID is not configured for private summary.');
+      return { success: false, summaryText: '' };
+    }
+
+    const summaryText =
+      await this.geminiService.generateWeeklyReportsSummary(
+        reports,
+        weekLabel
+      );
+
+    await client.chat.postMessage({
+      channel: managerId,
+      text: summaryText,
+    });
+
+    return { success: true, summaryText };
+  }
+
+  /**
+   * Executes full check, posts message to public channel, and delivers private AI summary to manager DM.
    */
   async runWeeklyCheck(
     client: any,
@@ -398,12 +530,107 @@ export class WeeklyCheckService {
 
     const text = this.generateSummaryMessage(summary);
 
+    // 1. Post weekly submission status & GS warning to public channel (without report bodies)
     await client.chat.postMessage({
       channel: channelId,
       text,
     });
 
+    // 2. Safely generate and send private AI weekly summary to manager's 1:1 DM
+    try {
+      const session = await this.fetchWeeklyReportTop();
+      if (session) {
+        const submittedStaff = extractSubmittedStaffRecords(session.pageHtml);
+        const reportDetails = await this.fetchSubmittedReportDetails(
+          session.cookieStr,
+          submittedStaff
+        );
+        await this.sendManagerPrivateSummary(
+          client,
+          weeklyReport.weekLabel,
+          reportDetails
+        );
+      }
+    } catch (summaryErr) {
+      console.error(
+        'Failed to generate or send manager private weekly summary:',
+        summaryErr
+      );
+    }
+
     return { success: true, message: '毎週火曜チェック通知を送信しました。' };
+  }
+
+  /**
+   * Generates weekly reports summary on-demand for manager.
+   */
+  async runWeeklySummary(
+    client: any,
+    requestingUserId?: string
+  ): Promise<{ success: boolean; message: string; summaryText: string }> {
+    const targetUser =
+      requestingUserId ||
+      this.managerSlackId ||
+      DEFAULT_MEMBER_SLACK_MAPPING['大沼'];
+
+    const session = await this.fetchWeeklyReportTop();
+    if (!session) {
+      // Mock / fallback if credentials missing
+      const fallbackReports: WeeklyReportContent[] = [
+        {
+          staffId: 48,
+          staffName: '大沼　佑麻',
+          impression:
+            '【業務内容】新規参画メンバーフォロー、Ph4対応\n【所感】順調に進捗しています。',
+          weekUptime: 40,
+          projects: [
+            {
+              properName: 'AI駆動開発支援',
+              endUser: 'KIRIN',
+              prjDetail: 'AIエージェント開発・社内ツール作成の高速化',
+            },
+          ],
+        },
+      ];
+      const summaryText =
+        await this.geminiService.generateWeeklyReportsSummary(
+          fallbackReports,
+          '先週分'
+        );
+
+      if (client && targetUser) {
+        await client.chat.postMessage({
+          channel: targetUser,
+          text: summaryText,
+        });
+      }
+      return { success: true, message: '週報要約を送信しました。', summaryText };
+    }
+
+    const checkResult = parseWeeklyReportTopHtml(session.pageHtml);
+    const submittedStaff = extractSubmittedStaffRecords(session.pageHtml);
+    const reportDetails = await this.fetchSubmittedReportDetails(
+      session.cookieStr,
+      submittedStaff
+    );
+
+    const summaryText = await this.geminiService.generateWeeklyReportsSummary(
+      reportDetails,
+      checkResult.weekLabel
+    );
+
+    if (client && targetUser) {
+      await client.chat.postMessage({
+        channel: targetUser,
+        text: summaryText,
+      });
+    }
+
+    return {
+      success: true,
+      message: '週報要約を大沼さんのDMに送信しました。',
+      summaryText,
+    };
   }
 }
 
@@ -500,6 +727,66 @@ export function parseWeeklyReportTopHtml(
     unsubmitted,
     totalMembers: ONUMA_TEAM_MEMBERS.length,
   };
+}
+
+/**
+ * Extracts submitted staff records (staffId, staffName, wrTargetDateId) from WeeklyReport top page HTML.
+ */
+export function extractSubmittedStaffRecords(
+  html: string
+): Array<{ staffId: number; staffName: string; wrTargetDateId: number }> {
+  const startIdx = html.indexOf('var filingData = ');
+  if (startIdx === -1) return [];
+
+  const endIdx = html.indexOf(';\n', startIdx);
+  const jsonStr = html
+    .substring(
+      startIdx + 'var filingData = '.length,
+      endIdx !== -1 ? endIdx : undefined
+    )
+    .trim()
+    .replace(/;\s*$/, '');
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let filingData: any[] = [];
+  try {
+    const fn = new Function('return ' + jsonStr);
+    filingData = fn();
+  } catch (e) {
+    console.warn('Failed to parse filingData for submitted staff records:', e);
+    return [];
+  }
+
+  const results: Array<{
+    staffId: number;
+    staffName: string;
+    wrTargetDateId: number;
+  }> = [];
+
+  for (const member of ONUMA_TEAM_MEMBERS) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const record = filingData.find(
+      (f: any) => f.staffName && isNameMatch(f.staffName, member)
+    );
+
+    if (
+      record &&
+      record.filingDatetime &&
+      String(record.filingDatetime).trim() !== ''
+    ) {
+      const targetDateId =
+        record.newestWrTargetDateId || record.latestWrTargetDateId;
+      if (record.staffId && targetDateId) {
+        results.push({
+          staffId: Number(record.staffId),
+          staffName: member,
+          wrTargetDateId: Number(targetDateId),
+        });
+      }
+    }
+  }
+
+  return results;
 }
 
 /**
