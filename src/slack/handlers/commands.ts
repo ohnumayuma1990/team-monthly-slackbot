@@ -1,10 +1,15 @@
 import { App } from '@slack/bolt';
 import { buildSubmissionModal } from '../modals/submissionModal';
+import { SheetsService } from '../../sheets/service';
+import { formatDefaultMonth } from '../../sheets/parser';
 
 /**
- * Registers slash command handlers (/gw and /monthly).
+ * Registers slash command handlers (/gw, /monthly, /gw-status).
  */
-export function registerCommandHandlers(app: App) {
+export function registerCommandHandlers(
+  app: App,
+  sheetsService: SheetsService = new SheetsService()
+) {
   // Command handler for /gw
   app.command('/gw', async ({ command, ack, client }) => {
     console.log(
@@ -13,7 +18,6 @@ export function registerCommandHandlers(app: App) {
     await ack();
 
     try {
-      // Attempt to retrieve user's real name or display name to pre-fill
       let defaultName = '';
       try {
         const userInfo = await client.users.info({ user: command.user_id });
@@ -24,7 +28,6 @@ export function registerCommandHandlers(app: App) {
       }
 
       const modalView = buildSubmissionModal(defaultName);
-      // Store channel_id in private_metadata so we can notify both DM and source channel
       modalView.private_metadata = command.channel_id || '';
 
       await client.views.open({
@@ -62,4 +65,61 @@ export function registerCommandHandlers(app: App) {
       console.error('Error opening submission modal:', error);
     }
   });
+
+  // Status check command: /gw-status
+  app.command('/gw-status', async ({ command, ack, client }) => {
+    await ack();
+
+    const targetMonth = command.text.trim() || formatDefaultMonth();
+    try {
+      const parsed = await sheetsService.getParsedSheet(targetMonth);
+
+      const submittedIndiv = parsed.individualRows.filter(
+        (r) => r.recentStatus && r.recentStatus.trim().length > 0
+      );
+      const unsubmittedIndiv = parsed.individualRows.filter(
+        (r) => !r.recentStatus || r.recentStatus.trim().length === 0
+      );
+
+      const submittedGw = parsed.groupworkRows.filter(
+        (r) => r.comment && r.comment.trim().length > 0
+      );
+      const unsubmittedGw = parsed.groupworkRows.filter(
+        (r) => !r.comment || r.comment.trim().length === 0
+      );
+
+      const submittedIndivNames =
+        submittedIndiv.map((r) => r.name).join('、') || '（なし）';
+      const unsubmittedIndivNames =
+        unsubmittedIndiv.map((r) => r.name).join('、') || '（なし・全員提出済み🎉）';
+
+      const submittedGwNames =
+        submittedGw.map((r) => r.name).join('、') || '（なし）';
+      const unsubmittedGwNames =
+        unsubmittedGw.map((r) => r.name).join('、') || '（なし・全員提出済み🎉）';
+
+      const statusMessage = `📊 *【${targetMonth}】共有事項・提出進捗状況*\n\n` +
+        `*1. 個人セクション（近況・稼働）*\n` +
+        `  ✅ *提出済み (${submittedIndiv.length}名):* ${submittedIndivNames}\n` +
+        `  ⏳ *未提出 (${unsubmittedIndiv.length}名):* ${unsubmittedIndivNames}\n\n` +
+        `*2. グループワークコメント*\n` +
+        `  ✅ *提出済み (${submittedGw.length}名):* ${submittedGwNames}\n` +
+        `  ⏳ *未提出 (${unsubmittedGw.length}名):* ${unsubmittedGwNames}`;
+
+      await client.chat.postEphemeral({
+        channel: command.channel_id,
+        user: command.user_id,
+        text: statusMessage,
+      });
+    } catch (err: unknown) {
+      console.error('Error in /gw-status command:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      await client.chat.postEphemeral({
+        channel: command.channel_id,
+        user: command.user_id,
+        text: `⚠️ シート「${targetMonth}」の状況取得に失敗しました:\n${msg}\n（※シートタブの存在やGoogleサービスアカウント権限をご確認ください）`,
+      });
+    }
+  });
 }
+

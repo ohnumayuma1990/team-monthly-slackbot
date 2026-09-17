@@ -16,7 +16,14 @@ export function isNameMatch(nameA: string, nameB: string): boolean {
   const normA = normalizeName(nameA);
   const normB = normalizeName(nameB);
   if (!normA || !normB) return false;
-  return normA === normB;
+  if (normA === normB) return true;
+  // Support last-name or partial match (e.g., '大沼' matches '大沼佑磨')
+  if (normA.length >= 2 && normB.length >= 2) {
+    if (normA.startsWith(normB) || normB.startsWith(normA)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export interface ParsedSheetData {
@@ -37,7 +44,7 @@ export interface ParsedSheetData {
  * Assumes 1-indexed row numbers corresponding to Google Sheets rows.
  *
  * Columns convention:
- * Col A = Index 0 (No or Category)
+ * Col A = Index 0 (No or Category / Group)
  * Col B = Index 1 (Name)
  * Col C = Index 2 (Status / GW Comment / Review)
  * Col D = Index 3 (Workload Landing)
@@ -66,27 +73,29 @@ export function parseMonthlySheet(
     const colD = (row[3] || '').trim();
     const colE = (row[4] || '').trim();
 
-    // Check for section headers in colA or colB
-    const combinedHeader = `${colA} ${colB}`.toLowerCase();
+    // Check for section headers across columns
+    const rowText = `${colA} ${colB} ${colC} ${colD} ${colE}`.toLowerCase();
     if (
-      combinedHeader.includes('個人') ||
-      combinedHeader.includes('近況') ||
-      combinedHeader.includes('individual')
+      rowText.includes('近況') ||
+      rowText.includes('稼働状況') ||
+      rowText.includes('面談希望') ||
+      rowText.includes('individual')
     ) {
       currentSection = 'individual';
       continue;
     } else if (
-      combinedHeader.includes('グループワーク') ||
-      combinedHeader.includes('gw') ||
-      combinedHeader.includes('group')
+      (colA === 'グループワーク' || colB === 'グループワーク' || rowText.includes('gw')) &&
+      !rowText.includes('メンバー') &&
+      !rowText.includes('近況')
     ) {
       currentSection = 'groupwork';
       continue;
     } else if (
-      combinedHeader.includes('オブザーバー') ||
-      combinedHeader.includes('まとめ') ||
-      combinedHeader.includes('総評') ||
-      combinedHeader.includes('observer')
+      rowText.includes('本日のまとめ') ||
+      rowText.includes('まとめ') ||
+      rowText.includes('オブザーバー') ||
+      rowText.includes('総評') ||
+      rowText.includes('observer')
     ) {
       currentSection = 'observer';
       continue;

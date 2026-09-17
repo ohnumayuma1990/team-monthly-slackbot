@@ -154,7 +154,7 @@ export function buildSubmissionModal(defaultName: string = ''): ModalView {
           multiline: true,
           placeholder: {
             type: 'plain_text',
-            text: '今月の業務の進捗や、困っていること、共有したいことなどをご記入ください。',
+            text: '近況：東芝案件の開発を行っています。\n困っていること：最近寝落ちしてしまう\n分解：寝不足、暑さで疲れている\n組み合わせ：布団に入らず軽くストレッチする',
           },
         },
       },
@@ -171,7 +171,7 @@ export function buildSubmissionModal(defaultName: string = ''): ModalView {
           action_id: 'workload_action',
           placeholder: {
             type: 'plain_text',
-            text: '例: 160h、150h程度、残業多め など',
+            text: '例: 140h、150h、残業多め など',
           },
         },
       },
@@ -181,7 +181,7 @@ export function buildSubmissionModal(defaultName: string = ''): ModalView {
         optional: true,
         label: {
           type: 'plain_text',
-          text: '面談希望',
+          text: '面談希望（対面 / WEB / 不要）',
         },
         element: {
           type: 'static_select',
@@ -193,31 +193,31 @@ export function buildSubmissionModal(defaultName: string = ''): ModalView {
           initial_option: {
             text: {
               type: 'plain_text',
-              text: '希望なし',
+              text: '不要',
             },
-            value: '希望なし',
+            value: '不要',
           },
           options: [
             {
               text: {
                 type: 'plain_text',
-                text: '希望なし',
+                text: '不要',
               },
-              value: '希望なし',
+              value: '不要',
             },
             {
               text: {
                 type: 'plain_text',
-                text: '希望あり（月内）',
+                text: 'WEB',
               },
-              value: '希望あり（月内）',
+              value: 'WEB',
             },
             {
               text: {
                 type: 'plain_text',
-                text: '希望あり（定例時）',
+                text: '対面',
               },
-              value: '希望あり（定例時）',
+              value: '対面',
             },
           ],
         },
@@ -246,7 +246,7 @@ export function buildSubmissionModal(defaultName: string = ''): ModalView {
           multiline: true,
           placeholder: {
             type: 'plain_text',
-            text: 'グループワークで学んだことや、気づき、フォローコメントなどをご記入ください。',
+            text: '教える側の感じたポイント：\n教わる側の感じたポイント：',
           },
         },
       },

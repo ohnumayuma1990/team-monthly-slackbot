@@ -18,6 +18,7 @@ describe('Sheets Parser & Name Normalization', () => {
 
   it('matches names accurately despite space discrepancies', () => {
     expect(isNameMatch('大沼 佑磨', '大沼佑磨')).toBe(true);
+    expect(isNameMatch('大沼', '大沼佑磨')).toBe(true);
     expect(isNameMatch('田中　太郎', '田中 太郎')).toBe(true);
     expect(isNameMatch('佐藤 次郎', '鈴木 次郎')).toBe(false);
   });
@@ -25,6 +26,41 @@ describe('Sheets Parser & Name Normalization', () => {
   it('formats default month properly', () => {
     const testDate = new Date(2026, 8, 1); // September (month index 8) 2026
     expect(formatDefaultMonth(testDate)).toBe('26_9月');
+  });
+
+  it('parses real team spreadsheet structure accurately', () => {
+    const realSheetRows = [
+      [
+        'グループワークメンバー',
+        '',
+        '近況＋困ってること→テキシコーに当てはめると',
+        '稼働状況（今月の稼働着地予想 ex:140h）',
+        '面談希望 対面 or WEB or 不要',
+      ],
+      ['A', '小川　智矢', '近況テスト', '140h', '不要'],
+      ['B', '川上　慶太', '', '', ''],
+      ['グループワーク', '', '', '', ''],
+      ['A', '小川　智矢', '教える側の感じたポイント：テスト', '', ''],
+      ['', '本日のまとめ', '', '', ''],
+      ['', '大沼', 'まとめコメント', '', ''],
+    ];
+
+    const parsed = parseMonthlySheet('26_8月', realSheetRows);
+    expect(parsed.individualRows.length).toBe(2);
+    expect(parsed.individualRows[0].name).toBe('小川　智矢');
+    expect(parsed.individualRows[0].recentStatus).toBe('近況テスト');
+    expect(parsed.individualRows[0].workloadLanding).toBe('140h');
+    expect(parsed.individualRows[0].interviewPreference).toBe('不要');
+
+    expect(parsed.groupworkRows.length).toBe(1);
+    expect(parsed.groupworkRows[0].name).toBe('小川　智矢');
+    expect(parsed.groupworkRows[0].comment).toBe(
+      '教える側の感じたポイント：テスト'
+    );
+
+    expect(parsed.observerRows.length).toBe(1);
+    expect(parsed.observerRows[0].name).toBe('大沼');
+    expect(parsed.observerRows[0].review).toBe('まとめコメント');
   });
 
   it('parses raw grid data into individual, groupwork, and observer sections', () => {
