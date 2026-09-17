@@ -248,13 +248,26 @@ export class WeeklyCheckService {
 
     for (const staff of submittedStaffList) {
       try {
+        const viewUrl = `https://auth.poweredge.co.jp/weekly_report/view?staffId=${staff.staffId}&wrTargetDateId=${staff.wrTargetDateId}`;
+
+        // 1. Visit the individual member view page
+        await fetch(viewUrl, {
+          headers: {
+            Cookie: cookieStr,
+            Referer: 'https://auth.poweredge.co.jp/weekly_report/top',
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          },
+        }).catch((e) => console.warn(`Failed to access view page for ${staff.staffName}:`, e));
+
+        // 2. Fetch report details (this registers the manager's browse / 既読 into tWrBrowseData)
         const apiUrl = 'https://auth.poweredge.co.jp/weekly_report/getReportInfo';
         const res = await fetch(apiUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
             Cookie: cookieStr,
-            Referer: `https://auth.poweredge.co.jp/weekly_report/view?staffId=${staff.staffId}&wrTargetDateId=${staff.wrTargetDateId}`,
+            Referer: viewUrl,
             'User-Agent':
               'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           },
