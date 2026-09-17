@@ -104,3 +104,42 @@ export interface GSessionScheduleDay {
   events: GSessionScheduleEvent[];
 }
 
+export interface TeamMemberConfig {
+  name: string;
+  slackId?: string;
+  email?: string;
+  staffNum?: string;
+  role?: 'member' | 'manager';
+}
+
+export interface GmailIncomingMessage {
+  id: string;
+  threadId?: string;
+  date: string;
+  from: string;
+  to?: string;
+  subject: string;
+  body: string;
+  snippet?: string;
+}
+
+export interface AttendanceRecord {
+  memberName: string;
+  slackUserId?: string;
+  date: string;
+  leaveType: string; // '全休', '午前休', '午後休', '遅刻', '早退', '在宅', etc.
+  isSameDay: boolean;
+  reason?: string;
+  rawSubject: string;
+}
+
+export interface AllHandsAnnouncement {
+  subject: string;
+  from: string;
+  date: string;
+  summary: string;
+  keyPoints: string[];
+  deadline?: string;
+  rawBody?: string;
+}
+

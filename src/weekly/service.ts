@@ -9,32 +9,21 @@ import {
 } from '../types';
 import { isNameMatch, normalizeName } from '../sheets/parser';
 import { GeminiService } from '../ai/gemini';
+import {
+  getTeamMembers,
+  getSlackMention as configGetSlackMention,
+  getManagerSlackId as configGetManagerSlackId,
+  DEFAULT_TEAM_MEMBERS,
+  DEFAULT_MANAGER,
+} from '../config/members';
 
-export const ONUMA_TEAM_MEMBERS = [
-  '小川　智矢',
-  '小紫　広介',
-  '朝岡　拓人',
-  '齋藤　宏行',
-  '小林　弘和',
-  '川上　慶太',
-  '長谷川　明莉',
-  '石割　朝比',
-  '尾崎　巧真',
-  '小倉　拓未',
-];
+export const ONUMA_TEAM_MEMBERS = DEFAULT_TEAM_MEMBERS.map((m) => m.name);
 
 export const DEFAULT_MEMBER_SLACK_MAPPING: Record<string, string> = {
-  '大沼': 'U0AQGV96Q4S',
-  '川上 慶太': 'U0AQ77705CP',
-  '長谷川 明莉': 'U0AQ6PUM0LF',
-  '朝岡 拓人': 'U0AQ6QH94AK',
-  '齋藤 宏行': 'U0AQAQYAKMZ',
-  '石割 朝比': 'U0AQF05E4KY',
-  '小紫 広介': 'U0AQF8WCPK5',
-  '小倉 拓未': 'U0AQHMZ7V34',
-  '小川 智矢': 'U0AQRJZK004',
-  '小林 弘和': 'U0AQSFFV760',
-  '尾崎 巧真': 'U0AR1HG1EJV',
+  '大沼': DEFAULT_MANAGER.slackId || 'U0AQGV96Q4S',
+  ...Object.fromEntries(
+    DEFAULT_TEAM_MEMBERS.filter((m) => m.slackId).map((m) => [m.name, m.slackId!])
+  ),
 };
 
 export class WeeklyCheckService {
@@ -234,18 +223,17 @@ export class WeeklyCheckService {
       console.error('Failed to fetch weekly report status:', err);
     }
 
+    const currentMembers = getTeamMembers().map((m) => m.name);
     return {
       weekLabel: '先週分',
       submitted: ['小川　智矢', '朝岡　拓人', '齋藤　宏行', '小林　弘和'],
-      unsubmitted: [
-        '川上　慶太',
-        '長谷川　明莉',
-        '石割　朝比',
-        '尾崎　巧真',
-        '小倉　拓未',
-        '小紫　広介',
-      ],
-      totalMembers: ONUMA_TEAM_MEMBERS.length,
+      unsubmitted: currentMembers.filter(
+        (m) =>
+          !['小川　智矢', '朝岡　拓人', '齋藤　宏行', '小林　弘和'].some(
+            (sub) => isNameMatch(sub, m)
+          )
+      ),
+      totalMembers: currentMembers.length,
     };
   }
 
@@ -435,14 +423,15 @@ export class WeeklyCheckService {
             isInactive: true,
           },
         ],
-        activeMembers: ONUMA_TEAM_MEMBERS.filter(
-          (m) => m !== '川上　慶太' && m !== '長谷川　明莉'
-        ).map((m) => ({
-          name: m,
-          daysSinceLastLogin: 1,
-          lastLoginDate: '9/16',
-          isInactive: false,
-        })),
+        activeMembers: getTeamMembers()
+          .map((m) => m.name)
+          .filter((m) => m !== '川上　慶太' && m !== '長谷川　明莉')
+          .map((m) => ({
+            name: m,
+            daysSinceLastLogin: 1,
+            lastLoginDate: '9/16',
+            isInactive: false,
+          })),
       };
     }
 
@@ -686,7 +675,12 @@ export class WeeklyCheckService {
    */
   async runWeeklySummary(
     client: any,
-    requestingUserId?: string
+    requestingUserId?: string,
+    options?: {
+      offsetWeeks?: number;
+      targetDate?: string;
+      targetWrDateId?: number;
+    }
   ): Promise<{
     success: boolean;
     message: string;
@@ -728,15 +722,46 @@ export class WeeklyCheckService {
       }
     } else {
       const checkResult = parseWeeklyReportTopHtml(session.pageHtml);
-      const submittedStaff = extractSubmittedStaffRecords(session.pageHtml);
+      const newestId = extractNewestWrTargetDateId(session.pageHtml) || 735;
+
+      let targetWrDateId: number | undefined = options?.targetWrDateId;
+      let label = checkResult.weekLabel;
+
+      if (options?.offsetWeeks && options.offsetWeeks > 0) {
+        targetWrDateId = newestId - options.offsetWeeks;
+        label = `${options.offsetWeeks}週前（週報ID: ${targetWrDateId}）`;
+      } else if (options?.targetDate) {
+        const parsedTime = new Date(options.targetDate).getTime();
+        if (!isNaN(parsedTime)) {
+          const diffDays = Math.round(
+            (Date.now() - parsedTime) / (1000 * 60 * 60 * 24)
+          );
+          const offsetWeeks = Math.max(0, Math.round(diffDays / 7));
+          targetWrDateId = newestId - offsetWeeks;
+          label = `${options.targetDate}頃（${offsetWeeks}週前 / 週報ID: ${targetWrDateId}）`;
+        }
+      }
+
+      const submittedStaff = extractSubmittedStaffRecords(
+        session.pageHtml,
+        targetWrDateId
+      );
       const reportDetails = await this.fetchSubmittedReportDetails(
         session.cookieStr,
         submittedStaff
       );
 
+      // Filter reports with actual content for past weeks
+      const filteredReports =
+        targetWrDateId !== undefined
+          ? reportDetails.filter(
+              (r) => r.impression.trim() !== '' || r.projects.length > 0
+            )
+          : reportDetails;
+
       summaryText = await this.geminiService.generateWeeklyReportsSummary(
-        reportDetails,
-        checkResult.weekLabel
+        filteredReports,
+        label
       );
 
       if (client && targetUser) {
@@ -818,9 +843,10 @@ export function parseWeeklyReportTopHtml(
 
   const startIdx = html.indexOf('var filingData = ');
   if (startIdx === -1) {
+    const currentMembers = getTeamMembers().map((m) => m.name);
     const submitted: string[] = [];
     const unsubmitted: string[] = [];
-    for (const member of ONUMA_TEAM_MEMBERS) {
+    for (const member of currentMembers) {
       if (isNameMatchInHtml(member, html)) {
         submitted.push(member);
       } else {
@@ -831,7 +857,7 @@ export function parseWeeklyReportTopHtml(
       weekLabel,
       submitted,
       unsubmitted,
-      totalMembers: ONUMA_TEAM_MEMBERS.length,
+      totalMembers: currentMembers.length,
     };
   }
 
@@ -855,8 +881,9 @@ export function parseWeeklyReportTopHtml(
 
   const submitted: string[] = [];
   const unsubmitted: string[] = [];
+  const currentMembers = getTeamMembers().map((m) => m.name);
 
-  for (const member of ONUMA_TEAM_MEMBERS) {
+  for (const member of currentMembers) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const record = filingData.find(
       (f: any) => f.staffName && isNameMatch(f.staffName, member)
@@ -889,15 +916,32 @@ export function parseWeeklyReportTopHtml(
     weekLabel,
     submitted,
     unsubmitted,
-    totalMembers: ONUMA_TEAM_MEMBERS.length,
+    totalMembers: currentMembers.length,
   };
 }
 
 /**
+ * Extracts the newest wrTargetDateId from top page HTML.
+ */
+export function extractNewestWrTargetDateId(html: string): number | null {
+  const match =
+    html.match(/"newestId"\s*:\s*(\d+)/i) ||
+    html.match(/newestWrTargetDateId\s*:\s*(\d+)/i) ||
+    html.match(/"newestWrTargetDateId"\s*:\s*(\d+)/i) ||
+    html.match(/wrTargetDateId\s*=\s*(\d+)/i);
+  if (match) {
+    return parseInt(match[1], 10);
+  }
+  return null;
+}
+
+/**
  * Extracts submitted staff records (staffId, staffName, wrTargetDateId) from WeeklyReport top page HTML.
+ * If targetWrDateId is specified, fetches for that historical week ID.
  */
 export function extractSubmittedStaffRecords(
-  html: string
+  html: string,
+  targetWrDateId?: number
 ): Array<{ staffId: number; staffName: string; wrTargetDateId: number }> {
   const startIdx = html.indexOf('var filingData = ');
   if (startIdx === -1) return [];
@@ -927,20 +971,29 @@ export function extractSubmittedStaffRecords(
     wrTargetDateId: number;
   }> = [];
 
-  for (const member of ONUMA_TEAM_MEMBERS) {
+  const members = getTeamMembers().map((m) => m.name);
+
+  for (const member of members) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const record = filingData.find(
       (f: any) => f.staffName && isNameMatch(f.staffName, member)
     );
 
-    if (
-      record &&
+    if (!record || !record.staffId) continue;
+
+    if (targetWrDateId !== undefined) {
+      results.push({
+        staffId: Number(record.staffId),
+        staffName: member,
+        wrTargetDateId: Number(targetWrDateId),
+      });
+    } else if (
       record.filingDatetime &&
       String(record.filingDatetime).trim() !== ''
     ) {
       const targetDateId =
         record.newestWrTargetDateId || record.latestWrTargetDateId;
-      if (record.staffId && targetDateId) {
+      if (targetDateId) {
         results.push({
           staffId: Number(record.staffId),
           staffName: member,
@@ -996,7 +1049,9 @@ export function parseGSessionMan050Html(
     }
   }
 
-  for (const member of ONUMA_TEAM_MEMBERS) {
+  const currentMembers = getTeamMembers().map((m) => m.name);
+
+  for (const member of currentMembers) {
     let matched: { lastLoginDate: string; daysSince: number } | undefined;
     for (const [foundName, data] of foundMembers.entries()) {
       if (isNameMatch(foundName, member)) {

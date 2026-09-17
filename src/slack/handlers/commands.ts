@@ -218,15 +218,44 @@ export function registerCommandHandlers(
   app.command('/weekly-summary', async ({ command, ack, respond, client }) => {
     await ack();
 
+    const arg = (command.text || '').trim();
+
+    if (arg === 'help') {
+      await respond({
+        response_type: 'ephemeral',
+        text:
+          `💡 */weekly-summary の使い方*\n` +
+          `・\`/weekly-summary\`: 最新週の週報要約と週間スケジュールを取得（マネージャーDMへ送信）\n` +
+          `・\`/weekly-summary 1\`: 1週間前（先々週）の週報要約を取得\n` +
+          `・\`/weekly-summary 2\`: 2週間前の週報要約を取得\n` +
+          `・\`/weekly-summary 2026-09-08\`: 指定した日付が含まれる週の週報要約を取得\n` +
+          `・\`/weekly-summary help\`: このヘルプを表示`,
+      });
+      return;
+    }
+
+    let options: { offsetWeeks?: number; targetDate?: string } | undefined;
+    let targetDesc = '最新の提出済み週報';
+
+    if (/^\d+$/.test(arg)) {
+      const offsetWeeks = parseInt(arg, 10);
+      options = { offsetWeeks };
+      targetDesc = `${offsetWeeks}週前の週報`;
+    } else if (/\d{4}[-/]\d{2}[-/]\d{2}/.test(arg)) {
+      options = { targetDate: arg };
+      targetDesc = `${arg}頃の過去週報`;
+    }
+
     await respond({
       response_type: 'ephemeral',
-      text: '⏳ 最新の提出済み週報とGroupSessionスケジュールを取得しています... 少々お待ちください。',
+      text: `⏳ ${targetDesc}とGroupSessionスケジュールを取得しています... 少々お待ちください。`,
     });
 
     try {
       const result = await weeklyService.runWeeklySummary(
         client,
-        command.user_id
+        command.user_id,
+        options
       );
       let reply = `✅ 週報AI要約を作成し、DMへ非公開送信しました！\n\n${result.summaryText}`;
       if (result.scheduleText) {

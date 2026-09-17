@@ -7,6 +7,7 @@ import { createCustomRoutes } from '../reminder/handler';
 import { SheetsService } from '../sheets/service';
 import { GeminiService } from '../ai/gemini';
 import { WeeklyCheckService } from '../weekly/service';
+import { EmailProcessingService } from '../email/service';
 
 export interface CreateAppResult {
   app: App;
@@ -14,6 +15,7 @@ export interface CreateAppResult {
   reminderService: ReminderService;
   geminiService: GeminiService;
   weeklyService: WeeklyCheckService;
+  emailService: EmailProcessingService;
 }
 
 /**
@@ -38,6 +40,7 @@ export function createSlackApp(): CreateAppResult {
   const reminderService = new ReminderService(sheetsService);
   const geminiService = new GeminiService();
   const weeklyService = new WeeklyCheckService(geminiService);
+  const emailService = new EmailProcessingService(geminiService);
 
   let app: App;
 
@@ -72,7 +75,12 @@ export function createSlackApp(): CreateAppResult {
     });
 
     // Register routes with app reference
-    const routes = createCustomRoutes(app, reminderService, weeklyService);
+    const routes = createCustomRoutes(
+      app,
+      reminderService,
+      weeklyService,
+      emailService
+    );
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const buildRoutes = require('@slack/bolt/dist/receivers/custom-routes').buildReceiverRoutes;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -94,5 +102,6 @@ export function createSlackApp(): CreateAppResult {
     reminderService,
     geminiService,
     weeklyService,
+    emailService,
   };
 }
