@@ -19,6 +19,20 @@ export const ONUMA_TEAM_MEMBERS = [
   '小倉　拓未',
 ];
 
+export const DEFAULT_MEMBER_SLACK_MAPPING: Record<string, string> = {
+  '大沼': 'U0AQGV96Q4S',
+  '川上 慶太': 'U0AQ77705CP',
+  '長谷川 明莉': 'U0AQ6PUM0LF',
+  '朝岡 拓人': 'U0AQ6QH94AK',
+  '齋藤 宏行': 'U0AQAQYAKMZ',
+  '石割 朝比': 'U0AQF05E4KY',
+  '小紫 広介': 'U0AQF8WCPK5',
+  '小倉 拓未': 'U0AQHMZ7V34',
+  '小川 智矢': 'U0AQRJZK004',
+  '小林 弘和': 'U0AQSFFV760',
+  '尾崎 巧真': 'U0AR1HG1EJV',
+};
+
 export class WeeklyCheckService {
   private weeklyUser: string;
   private weeklyPass: string;
@@ -40,16 +54,24 @@ export class WeeklyCheckService {
       process.env.GSESSION_USERNAME || process.env.GSESSION_USER || '';
     this.gsessionPass =
       process.env.GSESSION_PASSWORD || process.env.GSESSION_PASS || '';
-    this.managerSlackId = process.env.MANAGER_SLACK_USER_ID;
+    this.managerSlackId =
+      process.env.MANAGER_SLACK_USER_ID ||
+      DEFAULT_MEMBER_SLACK_MAPPING['大沼'];
 
     this.memberSlackMap = new Map();
     this.loadMemberMappings();
   }
 
   /**
-   * Loads member Slack mappings from MEMBER_SLACK_MAPPING env.
+   * Loads member Slack mappings from defaults and optional MEMBER_SLACK_MAPPING env.
    */
   private loadMemberMappings() {
+    // 1. Initialize with default Onuma team Slack IDs
+    for (const [name, slackId] of Object.entries(DEFAULT_MEMBER_SLACK_MAPPING)) {
+      this.memberSlackMap.set(normalizeName(name), slackId);
+    }
+
+    // 2. Override with custom environment variable if provided
     const mappingJson = process.env.MEMBER_SLACK_MAPPING;
     if (mappingJson) {
       try {

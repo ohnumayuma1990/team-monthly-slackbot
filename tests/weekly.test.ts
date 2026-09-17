@@ -28,7 +28,8 @@ describe('WeeklyCheckService', () => {
     expect(service.getManagerMention()).toBe('<@U_ONUMA_123>');
     expect(service.getSlackMention('川上 慶太')).toBe('<@U_KAWAKAMI_456>');
     expect(service.getSlackMention('長谷川　明莉')).toBe('<@U_HASEGAWA_789>');
-    expect(service.getSlackMention('小川 智矢')).toBe('小川 智矢さん');
+    expect(service.getSlackMention('小川 智矢')).toBe('<@U0AQRJZK004>');
+    expect(service.getSlackMention('外部 ゲスト')).toBe('外部 ゲストさん');
   });
 
   it('mentions manager and flagged members when either condition matches', () => {
