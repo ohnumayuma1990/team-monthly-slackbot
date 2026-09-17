@@ -1,4 +1,4 @@
-import { App, AppOptions } from '@slack/bolt';
+import { App, HTTPReceiver } from '@slack/bolt';
 import { registerCommandHandlers } from './handlers/commands';
 import { registerMessageHandlers } from './handlers/messages';
 import { registerSubmissionHandlers } from './handlers/submissions';
@@ -32,49 +32,35 @@ export function createSlackApp(): CreateAppResult {
   const geminiService = new GeminiService();
   const weeklyService = new WeeklyCheckService();
 
-  let appOptions: AppOptions = {
-    token,
-  };
+  let app: App;
 
   if (isSocketMode) {
     if (!appToken) {
       console.warn('SLACK_APP_TOKEN is required when SLACK_SOCKET_MODE=true.');
     }
-    appOptions = {
-      ...appOptions,
+    app = new App({
+      token,
       socketMode: true,
       appToken,
-    };
+    });
   } else {
     // HTTP Mode for Cloud Run
-    appOptions = {
-      ...appOptions,
-      signingSecret,
+    // Use Bolt's HTTPReceiver with custom routes for Cloud Scheduler and health checks
+    const receiver = new HTTPReceiver({
+      signingSecret: signingSecret || '',
       port: Number(process.env.PORT) || 3000,
-    };
-  }
+      customRoutes: [],
+    });
 
-  const app = new App(appOptions);
+    app = new App({
+      token,
+      receiver,
+    });
 
-  // In HTTP mode, register custom routes with the receiver
-  if (!isSocketMode) {
+    // Register routes with app reference
     const routes = createCustomRoutes(app, reminderService, weeklyService);
-    // Bolt's default HTTPReceiver supports router custom routes
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const receiver = (app as any).receiver;
-    if (receiver && receiver.router) {
-      for (const route of routes) {
-        const methods = Array.isArray(route.method)
-          ? route.method
-          : [route.method];
-        for (const method of methods) {
-          const lowerMethod = method.toLowerCase();
-          if (typeof receiver.router[lowerMethod] === 'function') {
-            receiver.router[lowerMethod](route.path, route.handler);
-          }
-        }
-      }
-    }
+    const buildRoutes = require('@slack/bolt/dist/receivers/custom-routes').buildReceiverRoutes;
+    (receiver as any).routes = buildRoutes(routes);
   }
 
   // Register command handlers (/gw, /monthly, /gw-status, /weekly-check)
