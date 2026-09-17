@@ -6,14 +6,17 @@ import {
   WeeklyCheckService,
   formatGSessionScheduleMessage,
 } from '../../weekly/service';
+import { PydioAttendanceService } from '../../pydio/service';
+import { getManagerSlackId } from '../../config/members';
 
 /**
- * Registers slash command handlers (/gw, /monthly, /gw-status, /weekly-check).
+ * Registers slash command handlers (/gw, /monthly, /gw-status, /weekly-check, /attendance-check).
  */
 export function registerCommandHandlers(
   app: App,
   sheetsService: SheetsService = new SheetsService(),
-  weeklyService: WeeklyCheckService = new WeeklyCheckService()
+  weeklyService: WeeklyCheckService = new WeeklyCheckService(),
+  attendanceService: PydioAttendanceService = new PydioAttendanceService()
 ) {
   // Command handler for /gw
   app.command('/gw', async ({ command, ack, client }) => {
@@ -321,6 +324,80 @@ export function registerCommandHandlers(
 
   app.command('/my-schedule', handleScheduleCommand);
   app.command('/gs-schedule', handleScheduleCommand);
+
+  // Command handler for /attendance-check (/pydio-check, /kintai-check)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleAttendanceCommand = async ({ command, ack, respond }: any) => {
+    await ack();
+
+    const rawText = (command.text || '').trim();
+    const tokens = rawText.split(/\s+/).filter((t: string) => t.length > 0);
+
+    if (tokens.some((t: string) => t.toLowerCase() === 'help')) {
+      await respond({
+        response_type: 'ephemeral',
+        text:
+          `💡 */attendance-check（勤怠出勤簿 提出確認）の使い方*\n` +
+          `・\`/attendance-check\`: 月初2営業日は前月、月末は当月の提出状況を確認\n` +
+          `・\`/attendance-check 202608\`: 指定年月（2026年8月度）の状況を確認\n` +
+          `・\`/attendance-check post\`: チャンネル全体に投稿（未提出者へメンション催促）\n` +
+          `・\`/attendance-check preview\`: 大沼マネージャー実行時でも全体投稿せず非公開プレビュー\n` +
+          `※ 大沼マネージャー実行時、または \`post\` 指定時はチャンネル全体に周知・催促されます。\n` +
+          `※ エイリアス: \`/pydio-check\`, \`/kintai-check\` も利用可能です。`,
+      });
+      return;
+    }
+
+    // Determine target month from arguments if provided (e.g. 202608 or 2026-08)
+    const monthToken = tokens.find((t: string) => /^\d{4}[-/]?\d{2}$/.test(t) || /^\d{6}$/.test(t));
+    const overrideYearMonth = monthToken ? monthToken.replace(/[^0-9]/g, '') : undefined;
+
+    const isManager = command.user_id === getManagerSlackId();
+    const hasPost = tokens.some(
+      (t: string) => t.toLowerCase() === 'post' || t.toLowerCase() === 'public'
+    );
+    const hasPreview = tokens.some(
+      (t: string) => t.toLowerCase() === 'preview' || t.toLowerCase() === 'test'
+    );
+
+    // Manager execution defaults to public broadcast unless preview is explicitly requested
+    const isPublic = (isManager && !hasPreview) || hasPost;
+
+    await respond({
+      response_type: 'ephemeral',
+      text: `⏳ Pydio 6から勤怠出勤簿の提出状況を確認しています... 少々お待ちください。`,
+    });
+
+    try {
+      const result = await attendanceService.checkAttendance(overrideYearMonth);
+      const message = attendanceService.formatSlackMessage(result, isPublic);
+
+      if (isPublic) {
+        await respond({
+          response_type: 'in_channel',
+          text: message,
+        });
+      } else {
+        const hint =
+          '\n\n_(💡 このメッセージはあなただけに表示されています。チャンネル全体へ通知・催促する場合は `/attendance-check post` と入力してください)_';
+        await respond({
+          response_type: 'ephemeral',
+          text: message + hint,
+        });
+      }
+    } catch (err: unknown) {
+      console.error('Error in /attendance-check command:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      await respond({
+        response_type: 'ephemeral',
+        text: `⚠️ 勤怠出勤簿の確認中にエラーが発生しました:\n${msg}`,
+      });
+    }
+  };
+
+  app.command('/attendance-check', handleAttendanceCommand);
+  app.command('/pydio-check', handleAttendanceCommand);
+  app.command('/kintai-check', handleAttendanceCommand);
 }
 
 

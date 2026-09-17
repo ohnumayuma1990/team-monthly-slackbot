@@ -143,3 +143,28 @@ export interface AllHandsAnnouncement {
   rawBody?: string;
 }
 
+export interface PydioAttendanceFile {
+  filename: string;
+  bytesize?: string;
+  modifTime?: string;
+}
+
+export interface AttendanceSubmissionStatus {
+  member: TeamMemberConfig;
+  submitted: boolean;
+  filename?: string;
+  bytesize?: string;
+  modifTime?: string;
+}
+
+export interface AttendanceCheckResult {
+  targetFolder: string;
+  targetMonth: string; // e.g. '202608'
+  fiscalYear: string; // e.g. '2026年度'
+  isFirstTwoBusinessDays: boolean;
+  isMonthEndBusinessDays: boolean;
+  submitted: AttendanceSubmissionStatus[];
+  unsubmitted: AttendanceSubmissionStatus[];
+  totalMembers: number;
+}
+

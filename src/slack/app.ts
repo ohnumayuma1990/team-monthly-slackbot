@@ -8,6 +8,7 @@ import { SheetsService } from '../sheets/service';
 import { GeminiService } from '../ai/gemini';
 import { WeeklyCheckService } from '../weekly/service';
 import { EmailProcessingService } from '../email/service';
+import { PydioAttendanceService } from '../pydio/service';
 
 export interface CreateAppResult {
   app: App;
@@ -16,6 +17,7 @@ export interface CreateAppResult {
   geminiService: GeminiService;
   weeklyService: WeeklyCheckService;
   emailService: EmailProcessingService;
+  attendanceService: PydioAttendanceService;
 }
 
 /**
@@ -41,6 +43,7 @@ export function createSlackApp(): CreateAppResult {
   const geminiService = new GeminiService();
   const weeklyService = new WeeklyCheckService(geminiService);
   const emailService = new EmailProcessingService(geminiService);
+  const attendanceService = new PydioAttendanceService();
 
   let app: App;
 
@@ -79,7 +82,8 @@ export function createSlackApp(): CreateAppResult {
       app,
       reminderService,
       weeklyService,
-      emailService
+      emailService,
+      attendanceService
     );
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const buildRoutes = require('@slack/bolt/dist/receivers/custom-routes').buildReceiverRoutes;
@@ -87,8 +91,8 @@ export function createSlackApp(): CreateAppResult {
     (receiver as any).routes = buildRoutes(routes);
   }
 
-  // Register command handlers (/gw, /monthly, /gw-status, /weekly-check)
-  registerCommandHandlers(app, sheetsService, weeklyService);
+  // Register command handlers (/gw, /monthly, /gw-status, /weekly-check, /attendance-check)
+  registerCommandHandlers(app, sheetsService, weeklyService, attendanceService);
 
   // Register Slack interaction handlers
   registerMessageHandlers(app, weeklyService);
@@ -103,5 +107,6 @@ export function createSlackApp(): CreateAppResult {
     geminiService,
     weeklyService,
     emailService,
+    attendanceService,
   };
 }

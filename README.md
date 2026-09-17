@@ -47,9 +47,12 @@
    - `users:read` (ユーザー情報の取得・氏名自動補完)
    - `im:write` (個別DMへの通知)
 3. **Slash Commands** で以下を追加:
-   - Command: `/gw`
-   - Description: `月次共有事項の入力モーダルを表示`
-   - （別名として `/monthly` も同様に登録可能）
+   - `/gw` (別名 `/monthly`): 月次共有事項の入力モーダルを表示
+   - `/gw-status`: スプレッドシートの提出進捗状況を確認
+   - `/weekly-check`: 週報提出状況とGroupSessionログイン状況の確認
+   - `/weekly-summary`: 週報AI要約・スケジュール取得（マネージャーDM宛）
+   - `/my-schedule`: 今週のGroupSessionスケジュール確認
+   - `/attendance-check` (別名 `/pydio-check`, `/kintai-check`): Pydio 6の勤怠出勤簿（Excel）提出確認（未提出者はSlackメンション付きで全体通知）
 4. **Socket Mode** (ローカル開発を行う場合):
    - 「Settings」→「Socket Mode」を Enable にし、App-Level Token（`xapp-...`）を発行。
 5. 「Install to Workspace」をクリックし、**Bot User OAuth Token (`xoxb-...`)** と **Signing Secret** を取得。
@@ -145,9 +148,15 @@ gcloud scheduler jobs create http team-monthly-reminder \
 team-monthly-slackbot/
 ├── src/
 │   ├── ai/
-│   │   └── gemini.ts            # Gemini 1.5/2.5/3.x Flash連携 (無料枠)
+│   │   └── gemini.ts            # Gemini Flash連携 (無料枠)
+│   ├── config/
+│   │   └── members.ts           # メンバー設定 (社員番号/名前/Slack ID/Email)
+│   ├── email/
+│   │   └── service.ts           # Gmail勤怠申請・全体アナウンス受信
+│   ├── pydio/
+│   │   └── service.ts           # Pydio 6 勤怠出勤簿(Excel)提出確認サービス
 │   ├── reminder/
-│   │   ├── handler.ts           # Cloud Scheduler用HTTPエンドポイント (/api/reminder)
+│   │   ├── handler.ts           # HTTPエンドポイント (/api/daily/run, /api/attendance/check)
 │   │   └── service.ts           # 未入力者検知 & Slack通知ロジック
 │   ├── sheets/
 │   │   ├── client.ts            # Google Sheets API サービスアカウント認証
@@ -155,19 +164,24 @@ team-monthly-slackbot/
 │   │   └── service.ts           # スプレッドシート読み書きモジュール
 │   ├── slack/
 │   │   ├── handlers/
-│   │   │   ├── commands.ts      # /gw, /monthly スラッシュコマンド
+│   │   │   ├── commands.ts      # スラッシュコマンド (/attendance-check 等)
 │   │   │   └── submissions.ts   # モーダル送信ハンドラ
 │   │   ├── modals/
 │   │   │   └── submissionModal.ts # Block Kit 入力モーダル
 │   │   └── app.ts               # Slack Bolt アプリケーション初期化
 │   ├── types/
 │   │   └── index.ts             # 型定義
+│   ├── weekly/
+│   │   └── service.ts           # 週報・GroupSession確認
 │   └── index.ts                 # サーバーエントリーポイント
 ├── tests/
-│   ├── gemini.test.ts           # Geminiサービステスト
-│   ├── modal.test.ts            # モーダルビルダーテスト
-│   ├── reminder.test.ts         # リマインダーサービステスト
-│   └── sheets.test.ts           # シート読み書き & 名寄せテスト
+│   ├── daily.test.ts
+│   ├── gemini.test.ts
+│   ├── modal.test.ts
+│   ├── pydio.test.ts            # Pydio勤怠確認テスト
+│   ├── reminder.test.ts
+│   ├── sheets.test.ts
+│   └── weekly.test.ts
 ├── Dockerfile                   # Cloud Run デプロイ用 Dockerfile
 ├── .env.example                 # 環境変数サンプル
 └── package.json

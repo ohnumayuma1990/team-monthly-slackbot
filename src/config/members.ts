@@ -6,51 +6,61 @@ export const DEFAULT_TEAM_MEMBERS: TeamMemberConfig[] = [
     name: '小川　智矢',
     slackId: 'U0AQRJZK004',
     email: 'tomoya.ogawa@poweredge.co.jp',
+    staffNum: '000156',
     role: 'member',
   },
   {
     name: '小紫　広介',
     slackId: 'U0AQF8WCPK5',
+    staffNum: '000257',
     role: 'member',
   },
   {
     name: '朝岡　拓人',
     slackId: 'U0AQ6QH94AK',
+    staffNum: '000320',
     role: 'member',
   },
   {
     name: '齋藤　宏行',
     slackId: 'U0AQAQYAKMZ',
+    staffNum: '000354',
     role: 'member',
   },
   {
     name: '小林　弘和',
     slackId: 'U0AQSFFV760',
+    staffNum: '000425',
     role: 'member',
   },
   {
     name: '川上　慶太',
     slackId: 'U0AQ77705CP',
+    staffNum: '000526',
     role: 'member',
   },
   {
     name: '長谷川　明莉',
     slackId: 'U0AQ6PUM0LF',
+    staffNum: '000535',
     role: 'member',
   },
   {
     name: '石割　朝比',
     slackId: 'U0AQF05E4KY',
+    staffNum: '000548',
     role: 'member',
   },
   {
     name: '尾崎　巧真',
     slackId: 'U0AR1HG1EJV',
+    staffNum: '000584',
     role: 'member',
   },
   {
     name: '小倉　拓未',
     slackId: 'U0AQHMZ7V34',
+    staffNum: '000595',
     role: 'member',
   },
 ];
@@ -59,6 +69,7 @@ export const DEFAULT_MANAGER: TeamMemberConfig = {
   name: '大沼　佑麻',
   slackId: 'U0AQGV96Q4S',
   email: 't-ohnuma@poweredge.co.jp',
+  staffNum: '000100',
   role: 'manager',
 };
 
