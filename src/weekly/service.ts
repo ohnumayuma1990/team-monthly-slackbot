@@ -453,7 +453,8 @@ export function parseWeeklyReportTopHtml(
       }
     }
 
-    if (unsubCount > 0 || !record.filingDatetime) {
+    // 一覧画面において「提出日時」が無い（nullまたは空文字）ユーザーが今週の未提出者
+    if (!record.filingDatetime || String(record.filingDatetime).trim() === '') {
       unsubmitted.push(member);
     } else {
       submitted.push(member);
