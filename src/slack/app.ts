@@ -27,7 +27,7 @@ export interface CreateAppResult {
  */
 export function createSlackApp(): CreateAppResult {
   const isSocketMode = process.env.SLACK_SOCKET_MODE === 'true';
-  const token = process.env.SLACK_BOT_TOKEN || 'xoxb-placeholder-token';
+  const token = process.env.SLACK_BOT_TOKEN || 'placeholder-bot-token';
   const signingSecret =
     process.env.SLACK_SIGNING_SECRET || 'placeholder-signing-secret';
   const appToken = process.env.SLACK_APP_TOKEN;
