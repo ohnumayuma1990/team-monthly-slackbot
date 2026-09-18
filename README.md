@@ -107,7 +107,11 @@
    本番では HTTP Webhook 受信を行うため `SLACK_SOCKET_MODE=false` にします。
 
 2. **Cloud Run へデプロイ**:
-   Google Cloud SDK (`gcloud`) を使用してデプロイします。
+   - **GitHub Actions による自動デプロイ（推奨）**:
+     `main` ブランチへプッシュすると、GitHub Actions (`.github/workflows/deploy.yml`) により自動でテストが実行され、Google Cloud Run へデプロイされます。
+     ※ Workload Identity Federation（OIDC連携）により、秘密鍵JSON不要で安全に認証されます。
+   - **手動デプロイ**:
+     Google Cloud SDK (`gcloud`) を使用してローカルから手動デプロイすることも可能です。
    ```bash
    gcloud run deploy team-monthly-slackbot \
      --source . \

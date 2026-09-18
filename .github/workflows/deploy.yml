@@ -18,6 +18,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Tests
+        run: npm test
+
       # Workload Identity Federation によるセキュアな認証（秘密鍵JSON不要）
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -36,4 +48,5 @@ jobs:
             --project project-af21d0bc-5f83-49ad-b24 \
             --min-instances 0 \
             --max-instances 1 \
-            --allow-unauthenticated
+            --allow-unauthenticated \
+            --quiet
