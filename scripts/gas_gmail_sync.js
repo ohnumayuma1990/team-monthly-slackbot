@@ -146,6 +146,7 @@ function syncGmailToSlack() {
       var isEmailMatch = emails.some(function(em) { return fromLower.indexOf(em) !== -1; });
 
       if (isKeywordMatch || isEmailMatch) {
+        var plainText = msg.getPlainBody() || '';
         messagesToSend.push({
           id: msg.getId(),
           threadId: thread.getId(),
@@ -153,8 +154,8 @@ function syncGmailToSlack() {
           from: from,
           to: msg.getTo() || '',
           subject: subject,
-          body: msg.getPlainBody() || '',
-          snippet: msg.getSnippet() || ''
+          body: plainText,
+          snippet: plainText.slice(0, 150).replace(/[\r\n\s]+/g, ' ')
         });
       }
     }
