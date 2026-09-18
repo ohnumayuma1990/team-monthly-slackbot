@@ -106,7 +106,9 @@ describe('WeeklyCheckService', () => {
 
     const message = service.generateSummaryMessage(summary);
 
-    expect(message).toContain('【定期チェック完了】チーム全員が週報提出済み＆GSログイン確認済みです！');
+    expect(message).toContain(
+      '【定期チェック完了】チーム全員が週報提出済み＆GSログイン確認済みです！'
+    );
     expect(message).not.toContain('【要確認】');
   });
 
@@ -214,9 +216,11 @@ describe('WeeklyCheckService', () => {
     };
 
     const mockGemini = new GeminiService('test-api-key');
-    jest.spyOn(mockGemini, 'generateWeeklyReportsSummary').mockResolvedValue(
-      '🔒 *【マネージャー専用・非公開】週報AI要約レポート*\nテスト要約内容'
-    );
+    jest
+      .spyOn(mockGemini, 'generateWeeklyReportsSummary')
+      .mockResolvedValue(
+        '🔒 *【マネージャー専用・非公開】週報AI要約レポート*\nテスト要約内容'
+      );
 
     const service = new WeeklyCheckService(mockGemini);
     const mockReports: WeeklyReportContent[] = [
@@ -226,7 +230,11 @@ describe('WeeklyCheckService', () => {
         impression: '順調に進捗しています。',
         weekUptime: 40,
         projects: [
-          { properName: 'テスト案件', endUser: 'テスト顧客', prjDetail: '開発業務' },
+          {
+            properName: 'テスト案件',
+            endUser: 'テスト顧客',
+            prjDetail: '開発業務',
+          },
         ],
       },
     ];
@@ -242,7 +250,9 @@ describe('WeeklyCheckService', () => {
     // Crucial check: channel must be the manager's Slack ID ('U_MGR_000'), NOT a public channel!
     expect(mockPostMessage).toHaveBeenCalledWith({
       channel: 'U_MGR_000',
-      text: expect.stringContaining('【マネージャー専用・非公開】週報AI要約レポート'),
+      text: expect.stringContaining(
+        '【マネージャー専用・非公開】週報AI要約レポート'
+      ),
     });
   });
 
@@ -322,11 +332,15 @@ describe('WeeklyCheckService', () => {
 
     const message = formatGSessionScheduleMessage(mockDays);
 
-    expect(message).toContain('🗓️ *【GroupSession】1週間のスケジュール* (09/18(金)〜09/24(木))');
+    expect(message).toContain(
+      '🗓️ *【GroupSession】1週間のスケジュール* (09/18(金)〜09/24(木))'
+    );
     expect(message).toContain('📌 *チーム定例*');
     expect(message).toContain('🇯🇵 _敬老の日_ (予定なし)');
     expect(message).toContain('🏖️ *夏休み*');
-    expect(message).toContain('🔗 <https://po-tal.poweredge.co.jp/gsession/schedule/sch010.do|GroupSessionスケジュールを開く>');
+    expect(message).toContain(
+      '🔗 <https://po-tal.poweredge.co.jp/gsession/schedule/sch010.do|GroupSessionスケジュールを開く>'
+    );
   });
 
   it('handles empty schedule gracefully in formatGSessionScheduleMessage', () => {
@@ -352,7 +366,9 @@ describe('WeeklyCheckService', () => {
     });
     jest.spyOn(service, 'checkGSessionLogins').mockResolvedValue({
       inactiveMembers: [],
-      activeMembers: [{ name: 'メンバーA', daysSinceLastLogin: 1, isInactive: false }],
+      activeMembers: [
+        { name: 'メンバーA', daysSinceLastLogin: 1, isInactive: false },
+      ],
     });
     jest.spyOn(service, 'fetchWeeklyReportTop').mockResolvedValue(null);
     jest.spyOn(service, 'fetchGSessionMySchedule').mockResolvedValue([

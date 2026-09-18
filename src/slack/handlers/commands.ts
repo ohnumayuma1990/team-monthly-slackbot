@@ -349,8 +349,12 @@ export function registerCommandHandlers(
     }
 
     // Determine target month from arguments if provided (e.g. 202608 or 2026-08)
-    const monthToken = tokens.find((t: string) => /^\d{4}[-/]?\d{2}$/.test(t) || /^\d{6}$/.test(t));
-    const overrideYearMonth = monthToken ? monthToken.replace(/[^0-9]/g, '') : undefined;
+    const monthToken = tokens.find(
+      (t: string) => /^\d{4}[-/]?\d{2}$/.test(t) || /^\d{6}$/.test(t)
+    );
+    const overrideYearMonth = monthToken
+      ? monthToken.replace(/[^0-9]/g, '')
+      : undefined;
 
     const isManager = command.user_id === getManagerSlackId();
     const hasPost = tokens.some(
@@ -399,5 +403,3 @@ export function registerCommandHandlers(
   app.command('/pydio-check', handleAttendanceCommand);
   app.command('/kintai-check', handleAttendanceCommand);
 }
-
-

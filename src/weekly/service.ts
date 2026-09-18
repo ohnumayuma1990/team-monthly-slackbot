@@ -1,4 +1,3 @@
-import { WebClient } from '@slack/web-api';
 import {
   WeeklyCheckSummary,
   WeeklyReportCheckResult,
@@ -11,7 +10,6 @@ import { isNameMatch, normalizeName } from '../sheets/parser';
 import { GeminiService } from '../ai/gemini';
 import {
   getTeamMembers,
-  getSlackMention as configGetSlackMention,
   getManagerSlackId as configGetManagerSlackId,
   getManagerConfig,
   findMemberByName,
@@ -46,8 +44,7 @@ export class WeeklyCheckService {
     this.gsessionPass =
       process.env.GSESSION_PASSWORD || process.env.GSESSION_PASS || '';
     this.managerSlackId =
-      process.env.MANAGER_SLACK_USER_ID ||
-      configGetManagerSlackId();
+      process.env.MANAGER_SLACK_USER_ID || configGetManagerSlackId();
 
     this.memberSlackMap = new Map();
     this.loadMemberMappings();
@@ -254,10 +251,13 @@ export class WeeklyCheckService {
             'User-Agent':
               'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           },
-        }).catch((e) => console.warn(`Failed to access view page for ${staff.staffName}:`, e));
+        }).catch((e) =>
+          console.warn(`Failed to access view page for ${staff.staffName}:`, e)
+        );
 
         // 2. Fetch report details (this registers the manager's browse / 既読 into tWrBrowseData)
-        const apiUrl = 'https://auth.poweredge.co.jp/weekly_report/getReportInfo';
+        const apiUrl =
+          'https://auth.poweredge.co.jp/weekly_report/getReportInfo';
         const res = await fetch(apiUrl, {
           method: 'POST',
           headers: {
@@ -318,7 +318,8 @@ export class WeeklyCheckService {
     }
 
     try {
-      const loginUrl = 'https://po-tal.poweredge.co.jp/gsession/common/cmn001.do';
+      const loginUrl =
+        'https://po-tal.poweredge.co.jp/gsession/common/cmn001.do';
       const initRes = await fetch(loginUrl);
       const initHtml = await initRes.text();
       const tokenMatch = initHtml.match(
@@ -496,8 +497,7 @@ export class WeeklyCheckService {
         `🚨 *【要確認】週報未提出、またはGroupSessionに1週間以上未ログインのメンバーがいます*\n` +
         `宛先: ${managerMention} / ${targetMentions}\n\n`;
     } else {
-      alertHeader =
-        `🎉 *【定期チェック完了】チーム全員が週報提出済み＆GSログイン確認済みです！* ✨\n\n`;
+      alertHeader = `🎉 *【定期チェック完了】チーム全員が週報提出済み＆GSログイン確認済みです！* ✨\n\n`;
     }
 
     const repSubNames = rep.submitted.join('、') || '（なし）';
@@ -551,11 +551,10 @@ export class WeeklyCheckService {
       return { success: false, summaryText: '' };
     }
 
-    const summaryText =
-      await this.geminiService.generateWeeklyReportsSummary(
-        reports,
-        weekLabel
-      );
+    const summaryText = await this.geminiService.generateWeeklyReportsSummary(
+      reports,
+      weekLabel
+    );
 
     await client.chat.postMessage({
       channel: managerId,
@@ -766,7 +765,8 @@ export class WeeklyCheckService {
 
     return {
       success: true,
-      message: '週報要約および週間スケジュールをマネージャーのDMに送信しました。',
+      message:
+        '週報要約および週間スケジュールをマネージャーのDMに送信しました。',
       summaryText,
       scheduleText,
     };
@@ -810,7 +810,7 @@ export function parseWeeklyReportTopHtml(
 ): WeeklyReportCheckResult {
   let weekLabel = '先週分';
   const deadlineMatch = html.match(
-    /([\d\/]+\s*[\d:]+)\s*<\/label>\s*<label[^>]*>締切りの週報<\/label>[\s\S]*?対象期間[：:]\s*<\/label>\s*<label>\s*([\d\/]+)\s*<\/label>\s*<label>\s*[～~]\s*<\/label>\s*<label>\s*([\d\/]+)/i
+    /([\d/]+\s*[\d:]+)\s*<\/label>\s*<label[^>]*>締切りの週報<\/label>[\s\S]*?対象期間[：:]\s*<\/label>\s*<label>\s*([\d/]+)\s*<\/label>\s*<label>\s*[～~]\s*<\/label>\s*<label>\s*([\d/]+)/i
   );
   if (deadlineMatch) {
     weekLabel = `${deadlineMatch[1].trim()} 締切 (${deadlineMatch[2].trim()}〜${deadlineMatch[3].trim()})`;
@@ -873,16 +873,6 @@ export function parseWeeklyReportTopHtml(
     if (!record) {
       unsubmitted.push(member);
       continue;
-    }
-
-    let unsubCount = 0;
-    if (Array.isArray(record.unsubmittedCount)) {
-      for (const item of record.unsubmittedCount) {
-        if (item[0] === record.staffId) {
-          unsubCount = item[1];
-          break;
-        }
-      }
     }
 
     // 一覧画面において「提出日時」が無い（nullまたは空文字）ユーザーが今週の未提出者
@@ -1223,4 +1213,3 @@ export function formatGSessionScheduleMessage(
     `🔗 <https://po-tal.poweredge.co.jp/gsession/schedule/sch010.do|GroupSessionスケジュールを開く>`
   );
 }
-

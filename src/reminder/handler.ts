@@ -166,11 +166,14 @@ export function createCustomRoutes(
           const rawMessages = Array.isArray(parsed)
             ? parsed
             : Array.isArray(parsed.messages)
-            ? parsed.messages
-            : [];
+              ? parsed.messages
+              : [];
 
           const es = emailService || new EmailProcessingService();
-          const result = await es.processIncomingEmails(rawMessages, app.client);
+          const result = await es.processIncomingEmails(
+            rawMessages,
+            app.client
+          );
 
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(
@@ -184,8 +187,7 @@ export function createCustomRoutes(
             })
           );
         } catch (error: unknown) {
-          const errMsg =
-            error instanceof Error ? error.message : String(error);
+          const errMsg = error instanceof Error ? error.message : String(error);
           console.error('Daily Gmail webhook error:', error);
           res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: errMsg }));
@@ -210,7 +212,9 @@ export function createCustomRoutes(
 
         const urlStr = req.url || '';
         const monthMatch = urlStr.match(/targetMonth=([^&]+)/);
-        const targetMonth = monthMatch ? decodeURIComponent(monthMatch[1]) : undefined;
+        const targetMonth = monthMatch
+          ? decodeURIComponent(monthMatch[1])
+          : undefined;
 
         try {
           const as = attendanceService || new PydioAttendanceService();
@@ -233,8 +237,7 @@ export function createCustomRoutes(
             })
           );
         } catch (error: unknown) {
-          const errMsg =
-            error instanceof Error ? error.message : String(error);
+          const errMsg = error instanceof Error ? error.message : String(error);
           console.error('Attendance check trigger error:', error);
           res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: errMsg }));
@@ -297,7 +300,10 @@ export function createCustomRoutes(
               attendanceTarget.targetMonth
             );
           } catch (aErr) {
-            console.error('Automated attendance check in daily run failed:', aErr);
+            console.error(
+              'Automated attendance check in daily run failed:',
+              aErr
+            );
           }
         }
 

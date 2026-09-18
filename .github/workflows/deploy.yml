@@ -9,6 +9,8 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # GCP_SA_KEY が GitHub Secrets に未設定の場合はデプロイを安全にスキップ（CI全体の失敗を防ぐ）
+    if: ${{ secrets.GCP_SA_KEY != '' }}
 
     steps:
       - name: Checkout code

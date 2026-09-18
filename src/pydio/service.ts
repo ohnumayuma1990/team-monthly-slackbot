@@ -2,7 +2,6 @@ import {
   AttendanceCheckResult,
   AttendanceSubmissionStatus,
   PydioAttendanceFile,
-  TeamMemberConfig,
 } from '../types';
 import { getTeamMembers } from '../config/members';
 
@@ -129,10 +128,14 @@ export class PydioAttendanceService {
     username?: string;
     password?: string;
   }) {
-    this.baseUrl = options?.baseUrl || process.env.PYDIO_BASE_URL || DEFAULT_PYDIO_BASE_URL;
-    this.repoId = options?.repoId || process.env.PYDIO_REPO_ID || DEFAULT_PYDIO_REPO_ID;
-    this.username = options?.username || process.env.WEEKLY_REPORT_USERNAME || '';
-    this.password = options?.password || process.env.WEEKLY_REPORT_PASSWORD || '';
+    this.baseUrl =
+      options?.baseUrl || process.env.PYDIO_BASE_URL || DEFAULT_PYDIO_BASE_URL;
+    this.repoId =
+      options?.repoId || process.env.PYDIO_REPO_ID || DEFAULT_PYDIO_REPO_ID;
+    this.username =
+      options?.username || process.env.WEEKLY_REPORT_USERNAME || '';
+    this.password =
+      options?.password || process.env.WEEKLY_REPORT_PASSWORD || '';
   }
 
   /**
@@ -144,7 +147,9 @@ export class PydioAttendanceService {
     }
 
     // Step 1: Get seed
-    const seedRes = await fetch(`${this.baseUrl}/index.php?get_action=get_seed`);
+    const seedRes = await fetch(
+      `${this.baseUrl}/index.php?get_action=get_seed`
+    );
     const rawSetCookie = seedRes.headers.get('set-cookie') || '';
     const cookiePart = rawSetCookie.split(';')[0];
 
@@ -169,12 +174,16 @@ export class PydioAttendanceService {
     const loginXml = await loginRes.text();
     const tokenMatch = loginXml.match(/secure_token="([^"]+)"/);
     if (!tokenMatch || !tokenMatch[1]) {
-      throw new Error(`Pydio login failed. Response: ${loginXml.slice(0, 300)}`);
+      throw new Error(
+        `Pydio login failed. Response: ${loginXml.slice(0, 300)}`
+      );
     }
 
     const secureToken = tokenMatch[1];
     const newSetCookie = loginRes.headers.get('set-cookie');
-    const sessionCookie = newSetCookie ? newSetCookie.split(';')[0] : cookiePart;
+    const sessionCookie = newSetCookie
+      ? newSetCookie.split(';')[0]
+      : cookiePart;
 
     return { sessionCookie, secureToken };
   }
@@ -182,7 +191,10 @@ export class PydioAttendanceService {
   /**
    * Switches repository to 共通フォルダ.
    */
-  async switchRepository(sessionCookie: string, secureToken: string): Promise<void> {
+  async switchRepository(
+    sessionCookie: string,
+    secureToken: string
+  ): Promise<void> {
     const switchUrl = `${this.baseUrl}/index.php?get_action=switch_repository&repository_id=${this.repoId}&secure_token=${secureToken}`;
     const res = await fetch(switchUrl, {
       headers: {
@@ -215,7 +227,9 @@ export class PydioAttendanceService {
     });
 
     if (!res.ok) {
-      throw new Error(`Failed to list Pydio directory ${dirPath}: HTTP ${res.status}`);
+      throw new Error(
+        `Failed to list Pydio directory ${dirPath}: HTTP ${res.status}`
+      );
     }
 
     const xml = await res.text();
@@ -252,14 +266,20 @@ export class PydioAttendanceService {
   /**
    * Checks attendance submission for team members against target folder.
    */
-  async checkAttendance(overrideYearMonth?: string): Promise<AttendanceCheckResult> {
+  async checkAttendance(
+    overrideYearMonth?: string
+  ): Promise<AttendanceCheckResult> {
     const target = determineAttendanceTarget(new Date(), overrideYearMonth);
     const { sessionCookie, secureToken } = await this.login();
     await this.switchRepository(sessionCookie, secureToken);
 
     let files: PydioAttendanceFile[] = [];
     try {
-      files = await this.listDirectory(target.folderPath, sessionCookie, secureToken);
+      files = await this.listDirectory(
+        target.folderPath,
+        sessionCookie,
+        secureToken
+      );
     } catch (e) {
       console.warn(`Could not list directory ${target.folderPath}:`, e);
     }
@@ -274,8 +294,11 @@ export class PydioAttendanceService {
         const cleanFileName = f.filename.replace(/[\s\u3000]+/g, '');
         // Match either by 6-digit staff number or normalized member name
         const matchStaff =
-          member.staffNum && member.staffNum.length > 0 && f.filename.includes(member.staffNum);
-        const matchName = cleanMemberName.length > 0 && cleanFileName.includes(cleanMemberName);
+          member.staffNum &&
+          member.staffNum.length > 0 &&
+          f.filename.includes(member.staffNum);
+        const matchName =
+          cleanMemberName.length > 0 && cleanFileName.includes(cleanMemberName);
         return matchStaff || matchName;
       });
 
@@ -311,7 +334,10 @@ export class PydioAttendanceService {
    * Formats Slack notification message.
    * Mentions unsubmitted members when broadcast to channel.
    */
-  formatSlackMessage(result: AttendanceCheckResult, isBroadcast: boolean = true): string {
+  formatSlackMessage(
+    result: AttendanceCheckResult,
+    _isBroadcast: boolean = true
+  ): string {
     const yearStr = result.targetMonth.slice(0, 4);
     const monthStr = result.targetMonth.slice(4, 6);
 
@@ -334,7 +360,9 @@ export class PydioAttendanceService {
       const mention = u.member.slackId
         ? `<@${u.member.slackId}> (${u.member.name})`
         : `${u.member.name}さん`;
-      const staffInfo = u.member.staffNum ? ` [社員番号: ${u.member.staffNum}]` : '';
+      const staffInfo = u.member.staffNum
+        ? ` [社員番号: ${u.member.staffNum}]`
+        : '';
       msg += `  ・${mention}${staffInfo}\n`;
     });
 
@@ -359,7 +387,9 @@ export class PydioAttendanceService {
     overrideYearMonth?: string
   ): Promise<{ result: AttendanceCheckResult; messageSent: boolean }> {
     const channelId =
-      targetChannelId || process.env.SLACK_NOTIFICATION_CHANNEL_ID || 'C0AQETFBF8W';
+      targetChannelId ||
+      process.env.SLACK_NOTIFICATION_CHANNEL_ID ||
+      'C0AQETFBF8W';
 
     const result = await this.checkAttendance(overrideYearMonth);
     const message = this.formatSlackMessage(result, true);

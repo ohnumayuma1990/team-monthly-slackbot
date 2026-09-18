@@ -49,9 +49,7 @@ export function getManagerConfig(): TeamMemberConfig {
     try {
       const parsed = JSON.parse(envConfig);
       if (Array.isArray(parsed)) {
-        const found = parsed.find(
-          (m) => m.role === 'manager'
-        );
+        const found = parsed.find((m) => m.role === 'manager');
         if (found) {
           return {
             ...found,

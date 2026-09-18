@@ -1,4 +1,8 @@
-import { WebClient } from '@slack/web-api';
+export interface SlackClientInterface {
+  chat: {
+    postMessage: (args: any) => Promise<any>;
+  };
+}
 import {
   GmailIncomingMessage,
   AttendanceRecord,
@@ -9,7 +13,7 @@ import {
   findMemberByName,
   getManagerSlackId,
 } from '../config/members';
-import { isNameMatch, normalizeName } from '../sheets/parser';
+import { normalizeName } from '../sheets/parser';
 import { GeminiService } from '../ai/gemini';
 
 export const DEFAULT_ATTENDANCE_KEYWORDS = ['applies'];
@@ -220,11 +224,15 @@ export class EmailProcessingService {
 
     // 1. Check leave type from subject or body: [全休], [遅刻], [午前休], [午後休], [在宅], etc.
     let leaveType = '申請';
-    const typeMatch = subject.match(/\[(全休|午前休|午後休|半休|遅刻|早退|在宅|有給|振休|特別休暇)\]/i);
+    const typeMatch = subject.match(
+      /\[(全休|午前休|午後休|半休|遅刻|早退|在宅|有給|振休|特別休暇)\]/i
+    );
     if (typeMatch) {
       leaveType = typeMatch[1];
     } else {
-      const bodyTypeMatch = body.match(/区分[：:]\s*(全休|午前休|午後休|半休|遅刻|早退|在宅|有給|振休|特別休暇)/i);
+      const bodyTypeMatch = body.match(
+        /区分[：:]\s*(全休|午前休|午後休|半休|遅刻|早退|在宅|有給|振休|特別休暇)/i
+      );
       if (bodyTypeMatch) {
         leaveType = bodyTypeMatch[1];
       }
@@ -245,8 +253,7 @@ export class EmailProcessingService {
     }
 
     // 3. Is same-day application?
-    const isSameDay =
-      subject.includes('当日申請') || body.includes('当日申請');
+    const isSameDay = subject.includes('当日申請') || body.includes('当日申請');
 
     // 4. Extract reason (if present)
     let reason = '';
@@ -319,24 +326,34 @@ export class EmailProcessingService {
           prompt,
           systemInstruction
         );
-        const cleaned = aiOutput.replace(/```json/gi, '').replace(/```/g, '').trim();
+        const cleaned = aiOutput
+          .replace(/```json/gi, '')
+          .replace(/```/g, '')
+          .trim();
         const parsed = JSON.parse(cleaned);
         if (parsed.summary) summary = parsed.summary;
         if (Array.isArray(parsed.keyPoints)) {
-          keyPoints.push(...parsed.keyPoints.filter((k: unknown) => typeof k === 'string'));
+          keyPoints.push(
+            ...parsed.keyPoints.filter((k: unknown) => typeof k === 'string')
+          );
         }
         if (parsed.deadline && parsed.deadline.trim() !== '') {
           deadline = parsed.deadline.trim();
         }
       } catch (err) {
-        console.warn('Gemini announcement summary parsing failed, using fallback:', err);
+        console.warn(
+          'Gemini announcement summary parsing failed, using fallback:',
+          err
+        );
       }
     }
 
     // Fallback if AI not configured or failed
     if (!summary) {
       const snippet = body.replace(/\s+/g, ' ').substring(0, 160);
-      summary = snippet ? `${snippet}...` : '（本文詳細はメールをご確認ください）';
+      summary = snippet
+        ? `${snippet}...`
+        : '（本文詳細はメールをご確認ください）';
     }
 
     return {
@@ -353,9 +370,12 @@ export class EmailProcessingService {
   /**
    * Formats attendance summary message for Manager DM.
    */
-  formatAttendanceSummaryMessage(records: AttendanceRecord[], targetDateStr?: string): string {
+  formatAttendanceSummaryMessage(
+    records: AttendanceRecord[],
+    targetDateStr?: string
+  ): string {
     const today = targetDateStr || new Date().toISOString().split('T')[0];
-    const [year, month, day] = today.split('-');
+    const [, month, day] = today.split('-');
     const formattedDate = `${month}/${day}`;
 
     if (records.length === 0) {
@@ -371,7 +391,9 @@ export class EmailProcessingService {
       .map((r) => {
         const sameDayTag = r.isSameDay ? ' [当日申請]' : '';
         const reasonTag = r.reason ? ` (${r.reason})` : '';
-        const dateTag = r.date ? ` [${r.date.substring(5).replace('-', '/')}]` : '';
+        const dateTag = r.date
+          ? ` [${r.date.substring(5).replace('-', '/')}]`
+          : '';
         return `・*${r.memberName}*: [${r.leaveType}]${dateTag}${sameDayTag}${reasonTag}`;
       })
       .join('\n');
@@ -443,7 +465,7 @@ export class EmailProcessingService {
    */
   async processIncomingEmails(
     messages: GmailIncomingMessage[],
-    client: any,
+    client: SlackClientInterface,
     options?: {
       managerId?: string;
       channelId?: string;
@@ -530,10 +552,7 @@ export class EmailProcessingService {
             text,
           });
         } catch (err) {
-          console.error(
-            'Failed to post announcement to general channel:',
-            err
-          );
+          console.error('Failed to post announcement to general channel:', err);
         }
       }
     }

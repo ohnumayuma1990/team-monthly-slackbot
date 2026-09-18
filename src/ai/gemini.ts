@@ -85,7 +85,10 @@ export class GeminiService {
         return textPart || '';
       } catch (err: unknown) {
         const errObj = err instanceof Error ? err : new Error(String(err));
-        console.warn(`Gemini generation attempt with ${targetModel} failed:`, errObj.message);
+        console.warn(
+          `Gemini generation attempt with ${targetModel} failed:`,
+          errObj.message
+        );
         lastError = errObj;
       }
     }
@@ -147,7 +150,9 @@ export class GeminiService {
 
     if (!this.isConfigured()) {
       // Fallback if GEMINI_API_KEY is not configured
-      const memberList = reports.map((r) => `・${r.staffName}（所感あり）`).join('\n');
+      const memberList = reports
+        .map((r) => `・${r.staffName}（所感あり）`)
+        .join('\n');
       return (
         `📊 *【週報要約（簡易版）】チーム状況サマリー* (${weekLabel})\n\n` +
         `_※GEMINI_API_KEYが未設定のため、AI要約をスキップし提出者一覧を表示しています。_\n\n` +

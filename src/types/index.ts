@@ -167,4 +167,3 @@ export interface AttendanceCheckResult {
   unsubmitted: AttendanceSubmissionStatus[];
   totalMembers: number;
 }
-

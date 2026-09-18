@@ -4,11 +4,7 @@ import {
   determineAttendanceTarget,
   PydioAttendanceService,
 } from '../src/pydio/service';
-import {
-  DEFAULT_TEAM_MEMBERS,
-  DEFAULT_MANAGER,
-  getTeamMembers,
-} from '../src/config/members';
+import { getTeamMembers } from '../src/config/members';
 import { AttendanceCheckResult } from '../src/types';
 
 describe('Pydio Attendance Check Service', () => {
@@ -103,9 +99,24 @@ describe('Pydio Attendance Check Service', () => {
     slackId: string;
     role: 'member' | 'manager';
   }> = [
-    { name: '山田 太郎', staffNum: '000101', slackId: 'U000101', role: 'member' },
-    { name: '佐藤 花子', staffNum: '000102', slackId: 'U000102', role: 'member' },
-    { name: '鈴木 一郎', staffNum: '000103', slackId: 'U000103', role: 'member' },
+    {
+      name: '山田 太郎',
+      staffNum: '000101',
+      slackId: 'U000101',
+      role: 'member',
+    },
+    {
+      name: '佐藤 花子',
+      staffNum: '000102',
+      slackId: 'U000102',
+      role: 'member',
+    },
+    {
+      name: '鈴木 一郎',
+      staffNum: '000103',
+      slackId: 'U000103',
+      role: 'member',
+    },
   ];
 
   describe('Team Member Staff Numbers', () => {
@@ -237,15 +248,18 @@ describe('Pydio Attendance Check Service', () => {
         if (urlStr.includes('get_action=get_seed')) {
           return {
             headers: {
-              get: (h: string) => (h === 'set-cookie' ? 'AjaXplorer=sess123; path=/' : null),
+              get: (h: string) =>
+                h === 'set-cookie' ? 'AjaXplorer=sess123; path=/' : null,
             },
           } as any;
         }
         if (urlStr.includes('index.php') && options?.method === 'POST') {
           return {
-            text: async () => '<logging_result value="1" secure_token="test_token_456"/>',
+            text: async () =>
+              '<logging_result value="1" secure_token="test_token_456"/>',
             headers: {
-              get: (h: string) => (h === 'set-cookie' ? 'AjaXplorer=sess123_auth; path=/' : null),
+              get: (h: string) =>
+                h === 'set-cookie' ? 'AjaXplorer=sess123_auth; path=/' : null,
             },
           } as any;
         }

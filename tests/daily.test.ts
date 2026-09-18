@@ -44,9 +44,27 @@ describe('Team Member Configuration (members.ts)', () => {
 
   test('parses TEAM_MEMBERS_CONFIG JSON when provided', () => {
     const customConfig = [
-      { name: '山田 太郎', slackId: 'U99999999', email: 'yamada@example.com', staffNum: '000101', role: 'member' },
-      { name: '佐藤 花子', slackId: 'U88888888', email: 'sato@example.com', staffNum: '000102', role: 'member' },
-      { name: '田中 統括', slackId: 'U77777777', email: 'tanaka@example.com', staffNum: '990001', role: 'manager' },
+      {
+        name: '山田 太郎',
+        slackId: 'U99999999',
+        email: 'yamada@example.com',
+        staffNum: '000101',
+        role: 'member',
+      },
+      {
+        name: '佐藤 花子',
+        slackId: 'U88888888',
+        email: 'sato@example.com',
+        staffNum: '000102',
+        role: 'member',
+      },
+      {
+        name: '田中 統括',
+        slackId: 'U77777777',
+        email: 'tanaka@example.com',
+        staffNum: '990001',
+        role: 'manager',
+      },
     ];
     process.env.TEAM_MEMBERS_CONFIG = JSON.stringify(customConfig);
 
@@ -79,7 +97,12 @@ describe('Team Member Configuration (members.ts)', () => {
 
   test('findMemberByEmail matches case-insensitively', () => {
     const customConfig = [
-      { name: '山田 太郎', slackId: 'U99999999', email: 'yamada@example.com', role: 'member' },
+      {
+        name: '山田 太郎',
+        slackId: 'U99999999',
+        email: 'yamada@example.com',
+        role: 'member',
+      },
     ];
     process.env.TEAM_MEMBERS_CONFIG = JSON.stringify(customConfig);
 
@@ -111,9 +134,24 @@ describe('EmailProcessingService', () => {
   beforeEach(() => {
     process.env = { ...originalEnv };
     const customConfig = [
-      { name: '山田 太郎', slackId: 'U11111111', email: 'yamada@example.com', role: 'member' },
-      { name: '佐藤 花子', slackId: 'U22222222', email: 'sato@example.com', role: 'member' },
-      { name: '田中 統括', slackId: 'U33333333', email: 'tanaka@example.com', role: 'manager' },
+      {
+        name: '山田 太郎',
+        slackId: 'U11111111',
+        email: 'yamada@example.com',
+        role: 'member',
+      },
+      {
+        name: '佐藤 花子',
+        slackId: 'U22222222',
+        email: 'sato@example.com',
+        role: 'member',
+      },
+      {
+        name: '田中 統括',
+        slackId: 'U33333333',
+        email: 'tanaka@example.com',
+        role: 'manager',
+      },
     ];
     process.env.TEAM_MEMBERS_CONFIG = JSON.stringify(customConfig);
     emailService = new EmailProcessingService();
@@ -183,8 +221,10 @@ describe('EmailProcessingService', () => {
   });
 
   test('manager direct routing and recipient exclusion', () => {
-    process.env.MANAGER_REPORT_FROM_EMAILS = 'boss@example.com, director@example.com';
-    process.env.EXCLUDE_ANNOUNCEMENT_TO_EMAILS = 'boss@example.com, secret@example.com';
+    process.env.MANAGER_REPORT_FROM_EMAILS =
+      'boss@example.com, director@example.com';
+    process.env.EXCLUDE_ANNOUNCEMENT_TO_EMAILS =
+      'boss@example.com, secret@example.com';
     process.env.MANAGER_REPORT_KEYWORDS = 'boss-tag, mgr-direct';
     const customService = new EmailProcessingService();
 
@@ -305,10 +345,15 @@ describe('EmailProcessingService', () => {
       },
     ];
 
-    const message = emailService.formatAttendanceSummaryMessage(records, '2026-09-18');
+    const message = emailService.formatAttendanceSummaryMessage(
+      records,
+      '2026-09-18'
+    );
     expect(message).toContain('チーム勤怠連絡');
     expect(message).toContain('昨日12:00以降の申請');
-    expect(message).toContain('・*山田 太郎*: [全休] [09/18] [当日申請] (体調不良のため終日お休み)');
+    expect(message).toContain(
+      '・*山田 太郎*: [全休] [09/18] [当日申請] (体調不良のため終日お休み)'
+    );
     expect(message).toContain('・*佐藤 花子*: [在宅] [09/18]');
     expect(message).toContain('その他メンバー: 申請なし（通常勤務）');
   });
@@ -438,7 +483,10 @@ describe('Historical Weekly Report Logic (weekly/service.ts)', () => {
 
   test('extractSubmittedStaffRecords uses targetWrDateId for historical inquiries', () => {
     const targetHistoricalId = 734; // 1 week ago
-    const records = extractSubmittedStaffRecords(sampleTopHtml, targetHistoricalId);
+    const records = extractSubmittedStaffRecords(
+      sampleTopHtml,
+      targetHistoricalId
+    );
     expect(records.length).toBeGreaterThanOrEqual(3);
     records.forEach((r) => {
       expect(r.wrTargetDateId).toBe(734);
