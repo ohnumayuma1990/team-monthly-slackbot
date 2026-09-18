@@ -1,6 +1,35 @@
 import { WeeklyReportContent } from '../types';
 
 /**
+ * Converts standard Markdown syntax to Slack-compatible mrkdwn.
+ * - Converts #, ##, ### headers to *bold header*
+ * - Converts **bold** to *bold*
+ * - Converts --- or *** horizontal rules to decorative separator line
+ * - Converts * item or - item bullets to ・item
+ * - Converts [text](url) to <url|text>
+ */
+export function formatMarkdownForSlack(text: string): string {
+  if (!text) return '';
+
+  return (
+    text
+      // 1. Convert markdown headers (# Header, ## Header, ### Header) to *Header*
+      .replace(/^#{1,6}\s*(.+)$/gm, '*$1*')
+      // 2. Convert horizontal rules (---, ___, ***) to clean Slack separator line
+      .replace(/^(?:---|___|\*\*\*)\s*$/gm, '━━━━━━━━━━━━━━━━━━━━━━')
+      // 3. Convert **bold** to *bold* (Slack bold)
+      .replace(/\*\*(.*?)\*\*/g, '*$1*')
+      // 4. Convert markdown links [text](url) to Slack links <url|text>
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<$2|$1>')
+      // 5. Convert list bullets (* item or - item) to clean bullet (・item)
+      .replace(/^(\s*)[*-]\s+/gm, '$1・')
+      // 6. Clean up 3 or more consecutive newlines into 2
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+  );
+}
+
+/**
  * Gemini API client for Google AI Studio (Free Tier)
  * Uses native fetch (Node.js 18+) for maximum stability and zero additional dependencies.
  */
@@ -110,7 +139,8 @@ export class GeminiService {
     const prompt = `メンバー名: ${memberName}\n近況・困りごと: ${statusText}`;
 
     try {
-      return await this.generateText(prompt, systemInstruction);
+      const raw = await this.generateText(prompt, systemInstruction);
+      return formatMarkdownForSlack(raw);
     } catch (e) {
       console.warn('Gemini hint generation failed:', e);
       return '';
@@ -124,10 +154,12 @@ export class GeminiService {
     if (!this.isConfigured()) return '';
 
     const systemInstruction =
-      'あなたはチームリーダーのサポートAIです。チームメンバー全員の月次近況やGW振り返りをまとめ、月次定例の総評ドラフト（トピック、好事例、課題、来月の注力ポイント）を箇条書きで分かりやすく整理してください。';
+      'あなたはチームリーダーのサポートAIです。チームメンバー全員の月次近況やGW振り返りをまとめ、月次定例の総評ドラフト（トピック、好事例、課題、来月の注力ポイント）を箇条書きで分かりやすく整理してください。' +
+      'Slackで表示するため、見出し記号（#、##、###）は使わず「*トピック名*」のように太字にし、箇条書き記号は「・」を使用してください。';
 
     try {
-      return await this.generateText(inputsSummary, systemInstruction);
+      const raw = await this.generateText(inputsSummary, systemInstruction);
+      return formatMarkdownForSlack(raw);
     } catch (e) {
       console.warn('Gemini summary generation failed:', e);
       return '';
@@ -163,14 +195,15 @@ export class GeminiService {
     const systemInstruction =
       'あなたはエンジニアチームマネージャーの専属AI参謀です。' +
       '提出されたチームメンバーの週報内容を分析し、マネージャーが1分で状況を正確に把握し、必要なアクション（フォロー、声掛け、課題解決）に繋げられる高品質な要約レポートを作成してください。\n\n' +
-      '【重要ルール】\n' +
-      '1. マネージャー視点で、メンバーが直面している課題・困りごと・健康面や残業などの兆候があれば最優先でピックアップしてください。\n' +
-      '2. 各メンバーの案件状況や成果を端的にまとめてください。\n' +
-      '3. SlackのMarkdown形式（*太字*、_斜体_、箇条書き）に準拠して整形してください。\n' +
-      '4. 以下の構成で出力してください：\n' +
-      '   ・1. 💡 全体概況・トピック（2〜3行）\n' +
-      '   ・2. ⚠️ 要フォロー・課題・アラート（マネージャー確認推奨）\n' +
-      '   ・3. 👤 メンバー別ハイライト（1人2〜3行で業務要約と所感）';
+      '【重要：Slack書式ルール（厳守）】\n' +
+      '・見出し記号（#、##、###）は絶対に使用しないでください（Slackで記号のまま表示されてしまいます）。見出しは「*1. 💡 全体概況・トピック*」のように「*」1つで囲んで太字にしてください。\n' +
+      '・太字は「**」ではなく「*」（アスタリスク1つ）を使用してください。\n' +
+      '・区切り線に「---」は使わず、空行で段落を分けてください。\n' +
+      '・箇条書きには「*」や「-」ではなく「・」を使用してください。\n\n' +
+      '【レポート構成】\n' +
+      '1. *💡 全体概況・トピック*（2〜3行）\n' +
+      '2. *⚠️ 要フォロー・課題・アラート*（マネージャー確認推奨。メンタル、残業、人間関係、スケジュール遅延など）\n' +
+      '3. *👤 メンバー別ハイライト*（1人2〜3行で業務要約と所感）';
 
     const formattedReports = reports
       .map((r, i) => {
@@ -202,7 +235,8 @@ export class GeminiService {
       `上記をもとに、マネージャー向けの週報サマリーを作成してください。`;
 
     try {
-      const summary = await this.generateText(prompt, systemInstruction);
+      const rawSummary = await this.generateText(prompt, systemInstruction);
+      const summary = formatMarkdownForSlack(rawSummary);
       return (
         `🔒 *【マネージャー専用・非公開】週報AI要約レポート*\n` +
         `対象: ${weekLabel} (提出完了: ${reports.length}名)\n\n` +

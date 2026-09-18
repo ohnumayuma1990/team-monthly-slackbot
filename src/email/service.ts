@@ -14,7 +14,7 @@ import {
   getManagerSlackId,
 } from '../config/members';
 import { normalizeName } from '../sheets/parser';
-import { GeminiService } from '../ai/gemini';
+import { GeminiService, formatMarkdownForSlack } from '../ai/gemini';
 
 export const DEFAULT_ATTENDANCE_KEYWORDS = ['applies'];
 export const DEFAULT_ANNOUNCEMENT_KEYWORDS = ['allpe'];
@@ -326,10 +326,14 @@ export class EmailProcessingService {
           .replace(/```/g, '')
           .trim();
         const parsed = JSON.parse(cleaned);
-        if (parsed.summary) summary = parsed.summary;
+        if (parsed.summary) {
+          summary = formatMarkdownForSlack(parsed.summary);
+        }
         if (Array.isArray(parsed.keyPoints)) {
           keyPoints.push(
-            ...parsed.keyPoints.filter((k: unknown) => typeof k === 'string')
+            ...parsed.keyPoints
+              .filter((k: unknown) => typeof k === 'string')
+              .map((k: string) => formatMarkdownForSlack(k))
           );
         }
         if (parsed.deadline && parsed.deadline.trim() !== '') {
