@@ -1201,7 +1201,7 @@ export function formatGSessionScheduleMessage(
         content = '_予定なし_';
       }
 
-      return `  ・*${d.formattedDate}*: ${content}`;
+      return `  ・ *${d.formattedDate}*: ${content}`;
     })
     .join('\n');
 

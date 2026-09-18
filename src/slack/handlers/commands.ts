@@ -255,18 +255,14 @@ export function registerCommandHandlers(
     });
 
     try {
-      const result = await weeklyService.runWeeklySummary(
+      await weeklyService.runWeeklySummary(
         client,
         command.user_id,
         options
       );
-      let reply = `✅ 週報AI要約を作成し、DMへ非公開送信しました！\n\n${result.summaryText}`;
-      if (result.scheduleText) {
-        reply += `\n\n${result.scheduleText}`;
-      }
       await respond({
         response_type: 'ephemeral',
-        text: reply,
+        text: '✅ 週報AI要約を作成し、DMへ送信しました！SlackのDMをご確認ください。',
       });
     } catch (err: unknown) {
       console.error('Error in /weekly-summary command:', err);
@@ -310,7 +306,7 @@ export function registerCommandHandlers(
 
       await respond({
         response_type: 'ephemeral',
-        text: scheduleText,
+        text: '✅ 今週のスケジュールを取得し、DMへ送信しました！SlackのDMをご確認ください。',
       });
     } catch (err: unknown) {
       console.error('Error in schedule command:', err);

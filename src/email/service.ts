@@ -393,7 +393,7 @@ export class EmailProcessingService {
         const dateTag = r.date
           ? ` [${r.date.substring(5).replace('-', '/')}]`
           : '';
-        return `・*${r.memberName}*: [${r.leaveType}]${dateTag}${sameDayTag}${reasonTag}`;
+        return `・ *${r.memberName}*: [${r.leaveType}]${dateTag}${sameDayTag}${reasonTag}`;
       })
       .join('\n');
 

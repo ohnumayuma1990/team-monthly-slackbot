@@ -42,6 +42,12 @@ describe('formatMarkdownForSlack', () => {
     expect(formatMarkdownForSlack(input)).toBe(expected);
   });
 
+  it('ensures space between fullwidth bullet and bold asterisk for Slack mrkdwn', () => {
+    const input = '- **齋藤 宏行**\n・*要フォロー*';
+    const expected = '・ *齋藤 宏行*\n・ *要フォロー*';
+    expect(formatMarkdownForSlack(input)).toBe(expected);
+  });
+
   it('converts markdown links to Slack links', () => {
     expect(formatMarkdownForSlack('[詳細](https://example.com)')).toBe(
       '<https://example.com|詳細>'

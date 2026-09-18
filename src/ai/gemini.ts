@@ -23,6 +23,8 @@ export function formatMarkdownForSlack(text: string): string {
       .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<$2|$1>')
       // 5. Convert list bullets (* item or - item) to clean bullet (・item)
       .replace(/^(\s*)[*-]\s+/gm, '$1・')
+      // Ensure space between bullet ・ and bold * for Slack mrkdwn parser: ・* -> ・ *
+      .replace(/・\*/g, '・ *')
       // 6. Clean up 3 or more consecutive newlines into 2
       .replace(/\n{3,}/g, '\n\n')
       .trim()
