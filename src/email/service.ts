@@ -18,10 +18,10 @@ import { GeminiService } from '../ai/gemini';
 
 export const DEFAULT_ATTENDANCE_KEYWORDS = ['applies'];
 export const DEFAULT_ANNOUNCEMENT_KEYWORDS = ['allpe'];
+export const DEFAULT_ANNOUNCEMENT_TO_EMAILS: string[] = [];
 export const DEFAULT_ANNOUNCEMENT_FROM_EMAILS: string[] = [];
 export const DEFAULT_MANAGER_REPORT_KEYWORDS: string[] = [];
 export const DEFAULT_MANAGER_REPORT_FROM_EMAILS: string[] = [];
-export const DEFAULT_EXCLUDE_ANNOUNCEMENT_TO_EMAILS: string[] = [];
 
 /**
  * Parses a comma-separated string from environment variables into a trimmed array.
@@ -94,12 +94,12 @@ export class EmailProcessingService {
   }
 
   /**
-   * Returns the list of recipient emails to exclude from announcement notifications (from env EXCLUDE_ANNOUNCEMENT_TO_EMAILS).
+   * Returns the list of recipient emails for all-hands announcements (from env ANNOUNCEMENT_TO_EMAILS).
    */
-  getExcludeAnnouncementToEmails(): string[] {
+  getAnnouncementToEmails(): string[] {
     return parseCommaSeparatedList(
-      process.env.EXCLUDE_ANNOUNCEMENT_TO_EMAILS,
-      DEFAULT_EXCLUDE_ANNOUNCEMENT_TO_EMAILS
+      process.env.ANNOUNCEMENT_TO_EMAILS,
+      DEFAULT_ANNOUNCEMENT_TO_EMAILS
     );
   }
 
@@ -114,26 +114,10 @@ export class EmailProcessingService {
   }
 
   /**
-   * Checks if an email recipient is in the exclusion list.
-   */
-  isExcludeRecipient(to?: string): boolean {
-    if (!to) return false;
-    const excludeEmails = this.getExcludeAnnouncementToEmails();
-    if (excludeEmails.length === 0) return false;
-    const toLower = to.toLowerCase();
-    return excludeEmails.some((email) => toLower.includes(email.toLowerCase()));
-  }
-
-  /**
    * Checks if an email is a manager direct report email.
-   * Rule: From matches MANAGER_REPORT_FROM_EMAILS or Subject matches MANAGER_REPORT_KEYWORDS,
-   * AND recipient is not in exclusion list.
+   * Rule: From matches MANAGER_REPORT_FROM_EMAILS or Subject matches MANAGER_REPORT_KEYWORDS.
    */
   isManagerDirectEmail(msg: GmailIncomingMessage): boolean {
-    if (this.isExcludeRecipient(msg.to)) {
-      return false;
-    }
-
     const from = (msg.from || '').toLowerCase();
     const reportFromEmails = this.getManagerReportFromEmails();
     if (reportFromEmails.some((email) => from.includes(email.toLowerCase()))) {
@@ -180,32 +164,43 @@ export class EmailProcessingService {
 
   /**
    * Checks if an email is an all-hands or important announcement.
-   * Rule: Exclude recipient matches EXCLUDE_ANNOUNCEMENT_TO_EMAILS.
-   * Sender is not in MANAGER_REPORT_FROM_EMAILS (which goes to manager DM instead).
-   * Subject contains announcement keyword OR From contains announcement sender email.
+   * Rule:
+   * 1. Senders in MANAGER_REPORT_FROM_EMAILS are excluded (they route to manager direct DM).
+   * 2. Recipient (To) matches ANNOUNCEMENT_TO_EMAILS (e.g. allpe@...)
+   * 3. Sender (From) matches ANNOUNCEMENT_FROM_EMAILS
+   * 4. Subject contains announcement keyword (e.g. allpe)
    */
   isAnnouncementEmail(msg: GmailIncomingMessage): boolean {
-    if (this.isExcludeRecipient(msg.to)) {
-      return false;
-    }
-
     const from = (msg.from || '').toLowerCase();
     const reportFromEmails = this.getManagerReportFromEmails();
     if (reportFromEmails.some((email) => from.includes(email.toLowerCase()))) {
       return false;
     }
 
+    const toEmails = this.getAnnouncementToEmails();
+    const fromEmails = this.getAnnouncementFromEmails();
     const subject = (msg.subject || '').toLowerCase();
-
-    // 1. Subject keyword match
     const keywords = this.getAnnouncementKeywords();
-    if (keywords.some((kw) => subject.includes(kw.toLowerCase()))) {
+
+    // 1. If recipient (To) is provided and announcement TO emails are configured:
+    // If sent to another specific address, it is not an all-hands announcement.
+    if (toEmails.length > 0 && msg.to) {
+      const to = msg.to.toLowerCase();
+      if (!toEmails.some((email) => to.includes(email.toLowerCase()))) {
+        return false;
+      }
       return true;
     }
 
-    // 2. Sender email match
-    const fromEmails = this.getAnnouncementFromEmails();
-    if (fromEmails.some((email) => from.includes(email.toLowerCase()))) {
+    // 2. Sender (From) email match
+    if (fromEmails.length > 0) {
+      if (fromEmails.some((email) => from.includes(email.toLowerCase()))) {
+        return true;
+      }
+    }
+
+    // 3. Subject keyword match
+    if (keywords.some((kw) => subject.includes(kw.toLowerCase()))) {
       return true;
     }
 

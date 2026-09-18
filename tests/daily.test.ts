@@ -220,11 +220,11 @@ describe('EmailProcessingService', () => {
     ).toBe(false);
   });
 
-  test('manager direct routing and recipient exclusion', () => {
+  test('manager direct routing and announcement whitelist', () => {
     process.env.MANAGER_REPORT_FROM_EMAILS =
       'boss@example.com, director@example.com';
-    process.env.EXCLUDE_ANNOUNCEMENT_TO_EMAILS =
-      'boss@example.com, secret@example.com';
+    process.env.ANNOUNCEMENT_TO_EMAILS =
+      'allpe@example.com, all-staff@example.com';
     process.env.MANAGER_REPORT_KEYWORDS = 'boss-tag, mgr-direct';
     const customService = new EmailProcessingService();
 
@@ -240,17 +240,16 @@ describe('EmailProcessingService', () => {
     // Should NOT be treated as general announcement
     expect(customService.isAnnouncementEmail(fromBoss)).toBe(false);
 
-    // 2. Email where TO matches EXCLUDE_ANNOUNCEMENT_TO_EMAILS is excluded completely
-    const toBoss: GmailIncomingMessage = {
-      id: 'boss-2',
+    // 2. Email where TO matches ANNOUNCEMENT_TO_EMAILS is identified as announcement
+    const toAll: GmailIncomingMessage = {
+      id: 'all-1',
       date: '',
       from: 'someone@example.com',
-      to: 'boss@example.com',
-      subject: '[allpe] 全社連絡事項',
+      to: 'allpe@example.com',
+      subject: '全社連絡事項',
       body: 'テスト',
     };
-    expect(customService.isAnnouncementEmail(toBoss)).toBe(false);
-    expect(customService.isManagerDirectEmail(toBoss)).toBe(false);
+    expect(customService.isAnnouncementEmail(toAll)).toBe(true);
 
     // 3. Subject containing configured manager keyword is manager direct email
     const subjectManager: GmailIncomingMessage = {
@@ -360,7 +359,7 @@ describe('EmailProcessingService', () => {
 
   test('processIncomingEmails routes messages to manager DM and general channel', async () => {
     process.env.MANAGER_REPORT_FROM_EMAILS = 'boss@example.com';
-    process.env.EXCLUDE_ANNOUNCEMENT_TO_EMAILS = 'exclude@example.com';
+    process.env.ANNOUNCEMENT_TO_EMAILS = 'allpe@example.com';
     const testService = new EmailProcessingService();
 
     const mockPostMessage = jest.fn().mockResolvedValue({ ok: true });
