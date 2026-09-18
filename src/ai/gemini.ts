@@ -23,9 +23,17 @@ export function formatMarkdownForSlack(text: string): string {
       .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<$2|$1>')
       // 5. Convert list bullets (* item or - item) to clean bullet (・item)
       .replace(/^(\s*)[*-]\s+/gm, '$1・')
-      // Ensure space between bullet ・ and bold * for Slack mrkdwn parser: ・* -> ・ *
+      // 6. Ensure space between bullet ・ and bold * for Slack mrkdwn parser: ・* -> ・ *
       .replace(/・\*/g, '・ *')
-      // 6. Clean up 3 or more consecutive newlines into 2
+      // 7. Fix Slack mrkdwn bold boundary issues with Japanese text:
+      //    Slack requires closing * to be followed by whitespace or ASCII punctuation.
+      //    Convert *bold*： to *bold*: (half-width colon + space for valid delimiter)
+      .replace(/\*([^\s*](?:[\s\S]*?[^\s*])?)\*：/g, '*$1*: ')
+      //    If closing * is followed by non-ASCII character (except whitespace), insert space
+      .replace(/\*([^\s*](?:[\s\S]*?[^\s*])?)\*([^\s\x20-\x7e])/g, '*$1* $2')
+      //    If opening * is preceded by non-ASCII character (except whitespace), insert space
+      .replace(/([^\s\x20-\x7e])\*([^\s*](?:[\s\S]*?[^\s*])?)\*/g, '$1 *$2*')
+      // 8. Clean up 3 or more consecutive newlines into 2
       .replace(/\n{3,}/g, '\n\n')
       .trim()
   );
@@ -200,12 +208,13 @@ export class GeminiService {
       '【重要：Slack書式ルール（厳守）】\n' +
       '・見出し記号（#、##、###）は絶対に使用しないでください（Slackで記号のまま表示されてしまいます）。見出しは「*1. 💡 全体概況・トピック*」のように「*」1つで囲んで太字にしてください。\n' +
       '・太字は「**」ではなく「*」（アスタリスク1つ）を使用してください。\n' +
+      '・太字の直後に全角コロン（：）を使うとSlackで太字が無効化されるため、見出しの後ろは「*項目名*: 詳細」のように半角コロンと半角スペースを使ってください。\n' +
       '・区切り線に「---」は使わず、空行で段落を分けてください。\n' +
       '・箇条書きには「*」や「-」ではなく「・」を使用してください。\n\n' +
       '【レポート構成】\n' +
       '1. *💡 全体概況・トピック*（2〜3行）\n' +
       '2. *⚠️ 要フォロー・課題・アラート*（マネージャー確認推奨。メンタル、残業、人間関係、スケジュール遅延など）\n' +
-      '3. *👤 メンバー別ハイライト*（1人2〜3行で業務要約と所感）';
+      '3. *👤 メンバー別ハイライト*（メンバー名は「・ *氏名*」のように太字にし、1人2〜3行で業務要約と所感）';
 
     const formattedReports = reports
       .map((r, i) => {

@@ -48,6 +48,12 @@ describe('formatMarkdownForSlack', () => {
     expect(formatMarkdownForSlack(input)).toBe(expected);
   });
 
+  it('converts fullwidth colon after bold to halfwidth colon with space for valid Slack delimiter', () => {
+    const input = '・ *稼働時間の入力漏れ確認*：週報上の稼働時間';
+    const expected = '・ *稼働時間の入力漏れ確認*: 週報上の稼働時間';
+    expect(formatMarkdownForSlack(input)).toBe(expected);
+  });
+
   it('converts markdown links to Slack links', () => {
     expect(formatMarkdownForSlack('[詳細](https://example.com)')).toBe(
       '<https://example.com|詳細>'
