@@ -9,22 +9,33 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # GCP_SA_KEY が GitHub Secrets に未設定の場合はデプロイを安全にスキップ（CI全体の失敗を防ぐ）
-    if: ${{ secrets.GCP_SA_KEY != '' }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Check GCP Credentials
+        id: check_credentials
+        run: |
+          if [ -z "${{ secrets.GCP_SA_KEY }}" ]; then
+            echo "has_credentials=false" >> $GITHUB_OUTPUT
+            echo "::notice::GCP_SA_KEY is not configured in GitHub Secrets. Cloud Run deployment skipped."
+          else
+            echo "has_credentials=true" >> $GITHUB_OUTPUT
+          fi
+
       - name: Authenticate to Google Cloud
+        if: steps.check_credentials.outputs.has_credentials == 'true'
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
       - name: Set up Cloud SDK
+        if: steps.check_credentials.outputs.has_credentials == 'true'
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Deploy to Cloud Run
+        if: steps.check_credentials.outputs.has_credentials == 'true'
         run: |
           gcloud run deploy team-monthly-slackbot \
             --source . \
