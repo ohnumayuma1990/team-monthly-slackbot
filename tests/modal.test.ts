@@ -13,7 +13,7 @@ describe('Slack Submission Modal Builder', () => {
   });
 
   it('builds modal view with correct callback_id and initial member name', () => {
-    const modal = buildSubmissionModal('大沼 佑磨');
+    const modal = buildSubmissionModal('山田 太郎');
     expect(modal.type).toBe('modal');
     expect(modal.callback_id).toBe(SUBMISSION_MODAL_CALLBACK_ID);
 
@@ -22,7 +22,7 @@ describe('Slack Submission Modal Builder', () => {
       (b: any) => b.block_id === 'member_name_block'
     ) as any;
     expect(nameBlock).toBeDefined();
-    expect(nameBlock.element.initial_value).toBe('大沼 佑磨');
+    expect(nameBlock.element.initial_value).toBe('山田 太郎');
 
     // Verify submission type block
     const typeBlock = modal.blocks.find(

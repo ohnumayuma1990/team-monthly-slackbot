@@ -1,7 +1,8 @@
 import { App } from '@slack/bolt';
 import { SheetsService } from '../sheets/service';
-import { normalizeName } from '../sheets/parser';
+import { normalizeName, isNameMatch } from '../sheets/parser';
 import { UnsubmittedMember } from '../types';
+import { findMemberByName, getTeamMembers } from '../config/members';
 
 export class ReminderService {
   private sheetsService: SheetsService;
@@ -14,7 +15,7 @@ export class ReminderService {
   }
 
   /**
-   * Loads member Slack mappings from MEMBER_SLACK_MAPPING env (e.g. JSON string {"大沼佑磨": "U12345678"}).
+   * Loads member Slack mappings from MEMBER_SLACK_MAPPING env (e.g. JSON string {"山田太郎": "U12345678"}).
    */
   private loadMemberMappings() {
     const mappingJson = process.env.MEMBER_SLACK_MAPPING;
@@ -40,11 +41,22 @@ export class ReminderService {
     const unsubmitted =
       await this.sheetsService.getUnsubmittedMembers(sheetName);
 
-    return unsubmitted.map((m) => {
-      const slackId = this.memberSlackMap.get(normalizeName(m.name));
+    const teamMembers = getTeamMembers();
+
+    // If TEAM_MEMBERS_CONFIG is configured with members, filter by active team members
+    const filtered =
+      teamMembers.length > 0
+        ? unsubmitted.filter((m) =>
+            teamMembers.some((tm) => isNameMatch(tm.name, m.name))
+          )
+        : unsubmitted;
+
+    return filtered.map((m) => {
+      const memberConfig = findMemberByName(m.name);
+      const legacySlackId = this.memberSlackMap.get(normalizeName(m.name));
       return {
         ...m,
-        slackUserId: slackId,
+        slackUserId: memberConfig?.slackId || legacySlackId,
       };
     });
   }

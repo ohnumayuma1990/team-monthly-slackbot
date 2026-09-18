@@ -130,7 +130,7 @@ export function buildSubmissionModal(defaultName: string = ''): any {
           initial_value: defaultName,
           placeholder: {
             type: 'plain_text',
-            text: '例: 大沼 佑磨',
+            text: '例: 山田 太郎',
           },
         },
       },

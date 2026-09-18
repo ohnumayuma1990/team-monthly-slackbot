@@ -341,8 +341,8 @@ export function registerCommandHandlers(
           `・\`/attendance-check\`: 月初2営業日は前月、月末は当月の提出状況を確認\n` +
           `・\`/attendance-check 202608\`: 指定年月（2026年8月度）の状況を確認\n` +
           `・\`/attendance-check post\`: チャンネル全体に投稿（未提出者へメンション催促）\n` +
-          `・\`/attendance-check preview\`: 大沼マネージャー実行時でも全体投稿せず非公開プレビュー\n` +
-          `※ 大沼マネージャー実行時、または \`post\` 指定時はチャンネル全体に周知・催促されます。\n` +
+          `・\`/attendance-check preview\`: マネージャー実行時でも全体投稿せず非公開プレビュー\n` +
+          `※ マネージャー実行時、または \`post\` 指定時はチャンネル全体に周知・催促されます。\n` +
           `※ エイリアス: \`/pydio-check\`, \`/kintai-check\` も利用可能です。`,
       });
       return;

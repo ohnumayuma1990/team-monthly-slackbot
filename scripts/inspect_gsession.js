@@ -191,7 +191,7 @@ async function main() {
   console.log(`   タイトル: ${titleMatch ? titleMatch[1].trim() : '（なし）'}`);
 
   // プラグイン・メニュー機能の検出
-  const menuKeywords = ['スケジュール', '日報', '掲示板', '回覧板', '施設予約', '稟議', 'プロジェクト', 'ショートメール', 'ファイル管理', '大沼'];
+  const menuKeywords = ['スケジュール', '日報', '掲示板', '回覧板', '施設予約', '稟議', 'プロジェクト', 'ショートメール', 'ファイル管理'];
   console.log('\n   【検出された主要機能】');
   for (const kw of menuKeywords) {
     const count = (pageHtml.match(new RegExp(kw, 'g')) || []).length;
@@ -227,8 +227,8 @@ async function main() {
   fs.writeFileSync(outPath, pageHtml, 'utf-8');
   console.log(`\n💾 メインポータルHTMLを保存しました: ${outPath}`);
 
-  // 4. チーム大沼の最終ログイン時間一覧 (man050.do) を取得
-  console.log('\n4. チーム大沼 (grpSid: 157) の最終ログイン時間一覧を取得中...');
+  // 4. チームの最終ログイン時間一覧 (man050.do) を取得
+  console.log('\n4. チーム (grpSid: 157) の最終ログイン時間一覧を取得中...');
   const man050Url = new URL('/gsession/main/man050.do', loginUrl).href;
   const man050Body = new URLSearchParams({
     CMD: '',
@@ -263,10 +263,16 @@ async function main() {
 
       const probeOutPath = path.join(__dirname, 'gsession_man050.html');
       fs.writeFileSync(probeOutPath, man050Html, 'utf-8');
-      console.log(`   💾 チーム大沼の画面HTMLを保存: ${probeOutPath}`);
+      console.log(`   💾 チーム画面HTMLを保存: ${probeOutPath}`);
 
-      // 簡単なプレビュー表示
-      for (const kw of ['川上', '石割', '小紫', '小倉', '小林', '長谷川', '小川', '尾崎', '齋藤', '朝岡', '大沼']) {
+      // 設定されたメンバーの検出
+      let checkNames = [];
+      if (process.env.TEAM_MEMBERS_CONFIG) {
+        try {
+          checkNames = JSON.parse(process.env.TEAM_MEMBERS_CONFIG).map((m) => m.name.split(/[\s　]+/)[0]);
+        } catch {}
+      }
+      for (const kw of checkNames) {
         const found = man050Html.includes(kw);
         console.log(`   - メンバー「${kw}」の検出: ${found ? '✅ あり' : '❌ なし'}`);
       }

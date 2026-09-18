@@ -231,8 +231,8 @@ async function main() {
     console.log('   ' + headers.join(' | '));
   }
 
-  // キーワード検出（大沼チームや提出状況など）
-  const keywords = ['大沼', '提出', '未提出', '承認', '週報', 'ステータス', '一覧'];
+  // キーワード検出（提出状況など）
+  const keywords = ['提出', '未提出', '承認', '週報', 'ステータス', '一覧'];
   console.log('\n   【キーワード検索結果】');
   for (const kw of keywords) {
     const count = (pageHtml.match(new RegExp(kw, 'g')) || []).length;

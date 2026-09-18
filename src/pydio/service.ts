@@ -131,7 +131,7 @@ export class PydioAttendanceService {
   }) {
     this.baseUrl = options?.baseUrl || process.env.PYDIO_BASE_URL || DEFAULT_PYDIO_BASE_URL;
     this.repoId = options?.repoId || process.env.PYDIO_REPO_ID || DEFAULT_PYDIO_REPO_ID;
-    this.username = options?.username || process.env.WEEKLY_REPORT_USERNAME || 'ohnuma';
+    this.username = options?.username || process.env.WEEKLY_REPORT_USERNAME || '';
     this.password = options?.password || process.env.WEEKLY_REPORT_PASSWORD || '';
   }
 

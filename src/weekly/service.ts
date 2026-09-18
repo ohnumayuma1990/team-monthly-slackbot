@@ -13,18 +13,14 @@ import {
   getTeamMembers,
   getSlackMention as configGetSlackMention,
   getManagerSlackId as configGetManagerSlackId,
-  DEFAULT_TEAM_MEMBERS,
-  DEFAULT_MANAGER,
+  getManagerConfig,
+  findMemberByName,
+  getAllMembers,
 } from '../config/members';
 
-export const ONUMA_TEAM_MEMBERS = DEFAULT_TEAM_MEMBERS.map((m) => m.name);
+export const ONUMA_TEAM_MEMBERS: string[] = [];
 
-export const DEFAULT_MEMBER_SLACK_MAPPING: Record<string, string> = {
-  '大沼': DEFAULT_MANAGER.slackId || 'U0AQGV96Q4S',
-  ...Object.fromEntries(
-    DEFAULT_TEAM_MEMBERS.filter((m) => m.slackId).map((m) => [m.name, m.slackId!])
-  ),
-};
+export const DEFAULT_MEMBER_SLACK_MAPPING: Record<string, string> = {};
 
 export class WeeklyCheckService {
   private weeklyUser: string;
@@ -51,7 +47,7 @@ export class WeeklyCheckService {
       process.env.GSESSION_PASSWORD || process.env.GSESSION_PASS || '';
     this.managerSlackId =
       process.env.MANAGER_SLACK_USER_ID ||
-      DEFAULT_MEMBER_SLACK_MAPPING['大沼'];
+      configGetManagerSlackId();
 
     this.memberSlackMap = new Map();
     this.loadMemberMappings();
@@ -61,9 +57,12 @@ export class WeeklyCheckService {
    * Loads member Slack mappings from defaults and optional MEMBER_SLACK_MAPPING env.
    */
   private loadMemberMappings() {
-    // 1. Initialize with default Onuma team Slack IDs
-    for (const [name, slackId] of Object.entries(DEFAULT_MEMBER_SLACK_MAPPING)) {
-      this.memberSlackMap.set(normalizeName(name), slackId);
+    // 1. Initialize from configured members
+    const all = getAllMembers();
+    for (const m of all) {
+      if (m.slackId) {
+        this.memberSlackMap.set(normalizeName(m.name), m.slackId);
+      }
     }
 
     // 2. Override with custom environment variable if provided
@@ -87,6 +86,10 @@ export class WeeklyCheckService {
    * Returns a Slack mention string (<@U12345> or fallback name).
    */
   getSlackMention(name: string): string {
+    const member = findMemberByName(name);
+    if (member?.slackId) {
+      return `<@${member.slackId}>`;
+    }
     for (const [mappedName, slackId] of this.memberSlackMap.entries()) {
       if (isNameMatch(mappedName, name)) {
         return `<@${slackId}>`;
@@ -96,33 +99,27 @@ export class WeeklyCheckService {
   }
 
   /**
-   * Returns Slack mention for the manager (Onuma).
+   * Returns Slack mention for the manager.
    */
   getManagerMention(): string {
-    if (this.managerSlackId) {
-      return `<@${this.managerSlackId}>`;
+    const id = this.getManagerSlackId();
+    if (id) {
+      return `<@${id}>`;
     }
-    for (const [mappedName, slackId] of this.memberSlackMap.entries()) {
-      if (isNameMatch(mappedName, '大沼')) {
-        return `<@${slackId}>`;
-      }
-    }
-    return '大沼さん';
+    const manager = getManagerConfig();
+    return manager.name ? `${manager.name}さん` : 'マネージャーさん';
   }
 
   /**
-   * Returns Slack user ID for the manager (Onuma).
+   * Returns Slack user ID for the manager.
    */
   getManagerSlackId(): string {
-    if (this.managerSlackId) {
-      return this.managerSlackId;
-    }
-    for (const [mappedName, slackId] of this.memberSlackMap.entries()) {
-      if (isNameMatch(mappedName, '大沼')) {
-        return slackId;
-      }
-    }
-    return DEFAULT_MEMBER_SLACK_MAPPING['大沼'] || '';
+    return (
+      this.managerSlackId ||
+      process.env.MANAGER_SLACK_USER_ID ||
+      configGetManagerSlackId() ||
+      ''
+    );
   }
 
   /**
@@ -226,13 +223,8 @@ export class WeeklyCheckService {
     const currentMembers = getTeamMembers().map((m) => m.name);
     return {
       weekLabel: '先週分',
-      submitted: ['小川　智矢', '朝岡　拓人', '齋藤　宏行', '小林　弘和'],
-      unsubmitted: currentMembers.filter(
-        (m) =>
-          !['小川　智矢', '朝岡　拓人', '齋藤　宏行', '小林　弘和'].some(
-            (sub) => isNameMatch(sub, m)
-          )
-      ),
+      submitted: [],
+      unsubmitted: currentMembers,
       totalMembers: currentMembers.length,
     };
   }
@@ -409,29 +401,13 @@ export class WeeklyCheckService {
   }> {
     if (!this.gsessionUser || !this.gsessionPass) {
       return {
-        inactiveMembers: [
-          {
-            name: '川上　慶太',
-            daysSinceLastLogin: 9,
-            lastLoginDate: '9/8 (9日前)',
-            isInactive: true,
-          },
-          {
-            name: '長谷川　明莉',
-            daysSinceLastLogin: 8,
-            lastLoginDate: '9/9 (8日前)',
-            isInactive: true,
-          },
-        ],
-        activeMembers: getTeamMembers()
-          .map((m) => m.name)
-          .filter((m) => m !== '川上　慶太' && m !== '長谷川　明莉')
-          .map((m) => ({
-            name: m,
-            daysSinceLastLogin: 1,
-            lastLoginDate: '9/16',
-            isInactive: false,
-          })),
+        inactiveMembers: [],
+        activeMembers: getTeamMembers().map((m) => ({
+          name: m.name,
+          daysSinceLastLogin: 0,
+          lastLoginDate: '未設定',
+          isInactive: false,
+        })),
       };
     }
 
@@ -483,8 +459,8 @@ export class WeeklyCheckService {
       console.error('Failed to fetch GroupSession login status:', err);
       return {
         inactiveMembers: [],
-        activeMembers: ONUMA_TEAM_MEMBERS.map((m) => ({
-          name: m,
+        activeMembers: getTeamMembers().map((m) => ({
+          name: m.name,
           isInactive: false,
         })),
       };
@@ -521,7 +497,7 @@ export class WeeklyCheckService {
         `宛先: ${managerMention} / ${targetMentions}\n\n`;
     } else {
       alertHeader =
-        `🎉 *【定期チェック完了】大沼チーム全員が週報提出済み＆GSログイン確認済みです！* ✨\n\n`;
+        `🎉 *【定期チェック完了】チーム全員が週報提出済み＆GSログイン確認済みです！* ✨\n\n`;
     }
 
     const repSubNames = rep.submitted.join('、') || '（なし）';
@@ -546,7 +522,7 @@ export class WeeklyCheckService {
 
     return (
       `${alertHeader}` +
-      `📊 *【毎週火曜定期チェック】大沼チーム状況レポート* (${dateStr})\n\n` +
+      `📊 *【毎週火曜定期チェック】チーム状況レポート* (${dateStr})\n\n` +
       `━━━━━━━━━━━━━━━━━━━━━━\n` +
       `📝 *1. 週報提出状況 (${rep.weekLabel})*\n` +
       `  ✅ *提出済み (${rep.submitted.length}/${rep.totalMembers}名):* ${repSubNames}\n` +
@@ -569,8 +545,7 @@ export class WeeklyCheckService {
     weekLabel: string,
     reports: WeeklyReportContent[]
   ): Promise<{ success: boolean; summaryText: string }> {
-    const managerId =
-      this.managerSlackId || DEFAULT_MEMBER_SLACK_MAPPING['大沼'];
+    const managerId = this.getManagerSlackId();
     if (!managerId) {
       console.warn('Manager Slack ID is not configured for private summary.');
       return { success: false, summaryText: '' };
@@ -696,7 +671,7 @@ export class WeeklyCheckService {
       const fallbackReports: WeeklyReportContent[] = [
         {
           staffId: 48,
-          staffName: '大沼　佑麻',
+          staffName: getManagerConfig().name || 'マネージャー',
           impression:
             '【業務内容】新規参画メンバーフォロー、Ph4対応\n【所感】順調に進捗しています。',
           weekUptime: 40,
@@ -791,7 +766,7 @@ export class WeeklyCheckService {
 
     return {
       success: true,
-      message: '週報要約および週間スケジュールを大沼さんのDMに送信しました。',
+      message: '週報要約および週間スケジュールをマネージャーのDMに送信しました。',
       summaryText,
       scheduleText,
     };
@@ -881,7 +856,13 @@ export function parseWeeklyReportTopHtml(
 
   const submitted: string[] = [];
   const unsubmitted: string[] = [];
-  const currentMembers = getTeamMembers().map((m) => m.name);
+  const configuredMembers = getTeamMembers().map((m) => m.name);
+  const currentMembers =
+    configuredMembers.length > 0
+      ? configuredMembers
+      : filingData
+          .filter((f: any) => f.staffName)
+          .map((f: any) => String(f.staffName));
 
   for (const member of currentMembers) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -971,7 +952,13 @@ export function extractSubmittedStaffRecords(
     wrTargetDateId: number;
   }> = [];
 
-  const members = getTeamMembers().map((m) => m.name);
+  const configuredMembers = getTeamMembers().map((m) => m.name);
+  const members =
+    configuredMembers.length > 0
+      ? configuredMembers
+      : filingData
+          .filter((f: any) => f.staffName)
+          .map((f: any) => String(f.staffName));
 
   for (const member of members) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1049,7 +1036,11 @@ export function parseGSessionMan050Html(
     }
   }
 
-  const currentMembers = getTeamMembers().map((m) => m.name);
+  const configuredMembers = getTeamMembers().map((m) => m.name);
+  const currentMembers =
+    configuredMembers.length > 0
+      ? configuredMembers
+      : Array.from(foundMembers.keys());
 
   for (const member of currentMembers) {
     let matched: { lastLoginDate: string; daysSince: number } | undefined;
@@ -1186,7 +1177,7 @@ export function formatGSessionScheduleMessage(
   days: GSessionScheduleDay[]
 ): string {
   if (!days || days.length === 0) {
-    return '🗓️ *【GroupSession】大沼さんの今週のスケジュール*\nスケジュール情報を取得できませんでした。';
+    return '🗓️ *【GroupSession】1週間のスケジュール*\nスケジュール情報を取得できませんでした。';
   }
 
   const startDay = days[0].formattedDate;
@@ -1225,7 +1216,7 @@ export function formatGSessionScheduleMessage(
     .join('\n');
 
   return (
-    `🗓️ *【GroupSession】大沼さんの1週間スケジュール* (${startDay}〜${endDay})\n` +
+    `🗓️ *【GroupSession】1週間のスケジュール* (${startDay}〜${endDay})\n` +
     `━━━━━━━━━━━━━━━━━━━━━━\n` +
     `${list}\n` +
     `━━━━━━━━━━━━━━━━━━━━━━\n` +

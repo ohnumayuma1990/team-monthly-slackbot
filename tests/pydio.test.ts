@@ -97,17 +97,35 @@ describe('Pydio Attendance Check Service', () => {
     });
   });
 
+  const MOCK_MEMBERS: Array<{
+    name: string;
+    staffNum: string;
+    slackId: string;
+    role: 'member' | 'manager';
+  }> = [
+    { name: '山田 太郎', staffNum: '000101', slackId: 'U000101', role: 'member' },
+    { name: '佐藤 花子', staffNum: '000102', slackId: 'U000102', role: 'member' },
+    { name: '鈴木 一郎', staffNum: '000103', slackId: 'U000103', role: 'member' },
+  ];
+
   describe('Team Member Staff Numbers', () => {
-    test('all 10 default members have 6-digit staff numbers', () => {
-      expect(DEFAULT_TEAM_MEMBERS).toHaveLength(10);
-      for (const member of DEFAULT_TEAM_MEMBERS) {
+    const originalEnv = process.env.TEAM_MEMBERS_CONFIG;
+
+    beforeEach(() => {
+      process.env.TEAM_MEMBERS_CONFIG = JSON.stringify(MOCK_MEMBERS);
+    });
+
+    afterEach(() => {
+      process.env.TEAM_MEMBERS_CONFIG = originalEnv;
+    });
+
+    test('configured members have 6-digit staff numbers', () => {
+      const members = getTeamMembers();
+      expect(members).toHaveLength(3);
+      for (const member of members) {
         expect(member.staffNum).toBeDefined();
         expect(member.staffNum).toMatch(/^\d{6}$/);
       }
-    });
-
-    test('manager has staff number 000100', () => {
-      expect(DEFAULT_MANAGER.staffNum).toBe('000100');
     });
   });
 
@@ -117,24 +135,24 @@ describe('Pydio Attendance Check Service', () => {
     test('extracts file entries with attributes', () => {
       const mockXml = `
         <tree>
-          <tree is_file="true" text="出勤簿000156_小川智矢.xls" filename="出勤簿000156_小川智矢.xls" bytesize="45056" ajxp_modiftime="1725164800"/>
-          <tree is_file="true" text="出勤簿000526_川上慶太.xlsm" filename="出勤簿000526_川上慶太.xlsm" bytesize="78234" ajxp_modiftime="1725165800"/>
+          <tree is_file="true" text="出勤簿000101_山田太郎.xls" filename="出勤簿000101_山田太郎.xls" bytesize="45056" ajxp_modiftime="1725164800"/>
+          <tree is_file="true" text="出勤簿000102_佐藤花子.xlsm" filename="出勤簿000102_佐藤花子.xlsm" bytesize="78234" ajxp_modiftime="1725165800"/>
           <tree is_file="false" text="subfolder" filename="subfolder"/>
         </tree>
       `;
 
       const files = service.parsePydioXml(mockXml);
       expect(files).toHaveLength(3);
-      expect(files[0].filename).toBe('出勤簿000156_小川智矢.xls');
+      expect(files[0].filename).toBe('出勤簿000101_山田太郎.xls');
       expect(files[0].bytesize).toBe('45056');
       expect(files[0].modifTime).toBe('1725164800');
-      expect(files[1].filename).toBe('出勤簿000526_川上慶太.xlsm');
+      expect(files[1].filename).toBe('出勤簿000102_佐藤花子.xlsm');
     });
   });
 
   describe('Slack Message Formatting (formatSlackMessage)', () => {
     const service = new PydioAttendanceService();
-    const members = getTeamMembers();
+    const members = MOCK_MEMBERS;
 
     test('formats all-submitted congratulatory message', () => {
       const mockResult: AttendanceCheckResult = {
@@ -155,13 +173,13 @@ describe('Pydio Attendance Check Service', () => {
       const msg = service.formatSlackMessage(mockResult, true);
       expect(msg).toContain('2026年08月度 勤怠出勤簿 提出状況');
       expect(msg).toContain('チームメンバー全員提出完了しています！');
-      expect(msg).toContain('提出済み (10/10名)');
+      expect(msg).toContain(`提出済み (${members.length}/${members.length}名)`);
       expect(msg).not.toContain('未提出');
     });
 
     test('formats unsubmitted alert with Slack mentions and call to action', () => {
-      const submittedMembers = members.slice(0, 8);
-      const unsubmittedMembers = members.slice(8); // last 2 members
+      const submittedMembers = members.slice(0, 1);
+      const unsubmittedMembers = members.slice(1); // last 2 members
 
       const mockResult: AttendanceCheckResult = {
         targetFolder: '/20.attendance/2026年度/202609',
@@ -183,20 +201,26 @@ describe('Pydio Attendance Check Service', () => {
 
       const msg = service.formatSlackMessage(mockResult, true);
       expect(msg).toContain('2026年09月度 勤怠出勤簿 提出状況');
-      expect(msg).toContain('未提出 (2 / 10名)');
+      expect(msg).toContain(`未提出 (2 / ${members.length}名)`);
       expect(msg).toContain(`<@${unsubmittedMembers[0].slackId}>`);
       expect(msg).toContain(`<@${unsubmittedMembers[1].slackId}>`);
       expect(msg).toContain('提出のお願い');
       expect(msg).toContain('Pydio共通フォルダ（上記パス）へ出勤簿Excel');
-      expect(msg).toContain('提出済み (8/10名)');
+      expect(msg).toContain(`提出済み (1/${members.length}名)`);
     });
   });
 
   describe('End-to-End Attendance Check Flow (mocked fetch)', () => {
     const originalFetch = global.fetch;
+    const originalEnv = process.env.TEAM_MEMBERS_CONFIG;
+
+    beforeEach(() => {
+      process.env.TEAM_MEMBERS_CONFIG = JSON.stringify(MOCK_MEMBERS);
+    });
 
     afterEach(() => {
       global.fetch = originalFetch;
+      process.env.TEAM_MEMBERS_CONFIG = originalEnv;
     });
 
     test('matches submitted files by staffNum and normalized name', async () => {
@@ -229,18 +253,10 @@ describe('Pydio Attendance Check Service', () => {
           return { ok: true } as any;
         }
         if (urlStr.includes('get_action=ls')) {
-          // Return XML with files for 9 out of 10 members (1 missing: 尾崎)
+          // Return XML with files for 2 out of 3 members (1 missing: 鈴木 一郎)
           const xmlFiles = [
-            '<tree is_file="true" text="出勤簿000156_小川智矢.xls" bytesize="1000"/>',
-            '<tree is_file="true" text="出勤簿000257_小紫広介.xls" bytesize="1000"/>',
-            '<tree is_file="true" text="出勤簿000320_朝岡拓人.xls" bytesize="1000"/>',
-            '<tree is_file="true" text="出勤簿000354_齋藤宏行.xls" bytesize="1000"/>',
-            '<tree is_file="true" text="出勤簿000425_小林弘和.xls" bytesize="1000"/>',
-            '<tree is_file="true" text="出勤簿000526_川上慶太.xlsm" bytesize="1000"/>',
-            '<tree is_file="true" text="出勤簿000535_長谷川明莉.xlsm" bytesize="1000"/>',
-            '<tree is_file="true" text="出勤簿000548_石割 朝比.xlsm" bytesize="1000"/>',
-            // 尾崎 (000584) is missing
-            '<tree is_file="true" text="出勤簿000595_小倉拓未.xls" bytesize="1000"/>',
+            '<tree is_file="true" text="出勤簿000101_山田太郎.xls" bytesize="1000"/>',
+            '<tree is_file="true" text="出勤簿000102_佐藤花子.xlsm" bytesize="1000"/>',
           ].join('\n');
 
           return {
@@ -252,9 +268,9 @@ describe('Pydio Attendance Check Service', () => {
       });
 
       const result = await service.checkAttendance('202608');
-      expect(result.submitted).toHaveLength(9);
+      expect(result.submitted).toHaveLength(2);
       expect(result.unsubmitted).toHaveLength(1);
-      expect(result.unsubmitted[0].member.name).toContain('尾崎');
+      expect(result.unsubmitted[0].member.name).toBe('鈴木 一郎');
 
       // Test runAttendanceNotification
       const mockPostMessage = jest.fn().mockResolvedValue({ ok: true });
@@ -273,8 +289,8 @@ describe('Pydio Attendance Check Service', () => {
       expect(mockPostMessage).toHaveBeenCalledTimes(1);
       const postArg = mockPostMessage.mock.calls[0][0];
       expect(postArg.channel).toBe('C_TEST_CHANNEL');
-      expect(postArg.text).toContain('未提出 (1 / 10名)');
-      expect(postArg.text).toContain('尾崎');
+      expect(postArg.text).toContain('未提出 (1 / 3名)');
+      expect(postArg.text).toContain('鈴木 一郎');
     });
   });
 });

@@ -1,6 +1,7 @@
 import {
   getTeamMembers,
   getAllMembers,
+  getManagerConfig,
   findMemberByName,
   findMemberByEmail,
   getSlackMention,
@@ -19,24 +20,33 @@ import { GmailIncomingMessage } from '../src/types';
 
 describe('Team Member Configuration (members.ts)', () => {
   const originalEnv = process.env.TEAM_MEMBERS_CONFIG;
+  const originalManagerId = process.env.MANAGER_SLACK_USER_ID;
 
   afterEach(() => {
-    process.env.TEAM_MEMBERS_CONFIG = originalEnv;
+    if (originalEnv !== undefined) {
+      process.env.TEAM_MEMBERS_CONFIG = originalEnv;
+    } else {
+      delete process.env.TEAM_MEMBERS_CONFIG;
+    }
+    if (originalManagerId !== undefined) {
+      process.env.MANAGER_SLACK_USER_ID = originalManagerId;
+    } else {
+      delete process.env.MANAGER_SLACK_USER_ID;
+    }
   });
 
-  test('returns 10 default team members when env is unset', () => {
+  test('returns default empty team members when env is unset', () => {
     delete process.env.TEAM_MEMBERS_CONFIG;
     const members = getTeamMembers();
-    expect(members).toHaveLength(10);
-    expect(members.map((m) => m.name)).toContain('小川　智矢');
-    expect(members.map((m) => m.name)).toContain('朝岡　拓人');
+    expect(members).toEqual(DEFAULT_TEAM_MEMBERS);
+    expect(members).toHaveLength(0);
   });
 
   test('parses TEAM_MEMBERS_CONFIG JSON when provided', () => {
     const customConfig = [
-      { name: '山田 太郎', slackId: 'U99999999', email: 'yamada@example.com' },
-      { name: '佐藤 花子', slackId: 'U88888888', role: 'member' },
-      { name: '大沼 佑麻', slackId: 'U0AQGV96Q4S', role: 'manager' },
+      { name: '山田 太郎', slackId: 'U99999999', email: 'yamada@example.com', staffNum: '000101', role: 'member' },
+      { name: '佐藤 花子', slackId: 'U88888888', email: 'sato@example.com', staffNum: '000102', role: 'member' },
+      { name: '田中 統括', slackId: 'U77777777', email: 'tanaka@example.com', staffNum: '990001', role: 'manager' },
     ];
     process.env.TEAM_MEMBERS_CONFIG = JSON.stringify(customConfig);
 
@@ -45,64 +55,92 @@ describe('Team Member Configuration (members.ts)', () => {
     expect(members.map((m) => m.name)).toContain('山田 太郎');
     expect(members.map((m) => m.name)).toContain('佐藤 花子');
     // Manager is excluded from regular member list
-    expect(members.map((m) => m.name)).not.toContain('大沼 佑麻');
+    expect(members.map((m) => m.name)).not.toContain('田中 統括');
 
     const all = getAllMembers();
     expect(all).toHaveLength(3);
+
+    const manager = getManagerConfig();
+    expect(manager.name).toBe('田中 統括');
+    expect(manager.slackId).toBe('U77777777');
   });
 
   test('findMemberByName handles various spacing', () => {
-    delete process.env.TEAM_MEMBERS_CONFIG;
-    expect(findMemberByName('小川 智矢')?.slackId).toBe('U0AQRJZK004');
-    expect(findMemberByName('小川　智矢')?.slackId).toBe('U0AQRJZK004');
-    expect(findMemberByName('小川智矢')?.slackId).toBe('U0AQRJZK004');
+    const customConfig = [
+      { name: '山田 太郎', slackId: 'U99999999', role: 'member' },
+    ];
+    process.env.TEAM_MEMBERS_CONFIG = JSON.stringify(customConfig);
+
+    expect(findMemberByName('山田 太郎')?.slackId).toBe('U99999999');
+    expect(findMemberByName('山田　太郎')?.slackId).toBe('U99999999');
+    expect(findMemberByName('山田太郎')?.slackId).toBe('U99999999');
     expect(findMemberByName('存在しない人')).toBeUndefined();
   });
 
   test('findMemberByEmail matches case-insensitively', () => {
-    delete process.env.TEAM_MEMBERS_CONFIG;
-    const found = findMemberByEmail('TOMOYA.OGAWA@poweredge.co.jp');
-    expect(found?.name).toBe('小川　智矢');
+    const customConfig = [
+      { name: '山田 太郎', slackId: 'U99999999', email: 'yamada@example.com', role: 'member' },
+    ];
+    process.env.TEAM_MEMBERS_CONFIG = JSON.stringify(customConfig);
+
+    const found = findMemberByEmail('YAMADA@EXAMPLE.COM');
+    expect(found?.name).toBe('山田 太郎');
   });
 
   test('getSlackMention formats mention tags properly', () => {
-    delete process.env.TEAM_MEMBERS_CONFIG;
-    expect(getSlackMention('小川 智矢')).toBe('<@U0AQRJZK004>');
+    const customConfig = [
+      { name: '山田 太郎', slackId: 'U99999999', role: 'member' },
+    ];
+    process.env.TEAM_MEMBERS_CONFIG = JSON.stringify(customConfig);
+
+    expect(getSlackMention('山田 太郎')).toBe('<@U99999999>');
     expect(getSlackMention('未知のメンバー')).toBe('未知のメンバーさん');
   });
 
-  test('getManagerSlackId returns Onuma ID', () => {
+  test('getManagerSlackId returns manager ID from JSON or env', () => {
     delete process.env.TEAM_MEMBERS_CONFIG;
-    expect(getManagerSlackId()).toBe('U0AQGV96Q4S');
+    process.env.MANAGER_SLACK_USER_ID = 'U_MGR_TEST';
+    expect(getManagerSlackId()).toBe('U_MGR_TEST');
   });
 });
 
 describe('EmailProcessingService', () => {
   let emailService: EmailProcessingService;
+  const originalEnv = { ...process.env };
 
   beforeEach(() => {
-    delete process.env.TEAM_MEMBERS_CONFIG;
+    process.env = { ...originalEnv };
+    const customConfig = [
+      { name: '山田 太郎', slackId: 'U11111111', email: 'yamada@example.com', role: 'member' },
+      { name: '佐藤 花子', slackId: 'U22222222', email: 'sato@example.com', role: 'member' },
+      { name: '田中 統括', slackId: 'U33333333', email: 'tanaka@example.com', role: 'manager' },
+    ];
+    process.env.TEAM_MEMBERS_CONFIG = JSON.stringify(customConfig);
     emailService = new EmailProcessingService();
+  });
+
+  afterAll(() => {
+    process.env = originalEnv;
   });
 
   test('isAttendanceEmail identifies applies emails for team members', () => {
     const validEmail: GmailIncomingMessage = {
       id: 'msg-1',
       date: '2026-09-18T08:30:00Z',
-      from: 'tomoya.ogawa@poweredge.co.jp',
-      subject: '[applies:40797][全休]2026-09-18 当日申請 小川　智矢',
+      from: 'yamada@example.com',
+      subject: '[applies:40797][全休]2026-09-18 当日申請 山田 太郎',
       body: '体調不良のため終日全休をいただきます。',
     };
     const check1 = emailService.isAttendanceEmail(validEmail);
     expect(check1.isAttendance).toBe(true);
-    expect(check1.matchedMemberName).toBe('小川　智矢');
+    expect(check1.matchedMemberName).toBe('山田 太郎');
 
     // Non-member attendance email should not match
     const nonMemberEmail: GmailIncomingMessage = {
       id: 'msg-2',
       date: '2026-09-18T08:30:00Z',
-      from: 'tanaka@poweredge.co.jp',
-      subject: '[applies:40798][全休]2026-09-18 当日申請 田中 太郎',
+      from: 'other@example.com',
+      subject: '[applies:40798][全休]2026-09-18 当日申請 鈴木 一郎',
       body: 'お休みします',
     };
     const check2 = emailService.isAttendanceEmail(nonMemberEmail);
@@ -112,54 +150,22 @@ describe('EmailProcessingService', () => {
     const normalEmail: GmailIncomingMessage = {
       id: 'msg-3',
       date: '2026-09-18T08:30:00Z',
-      from: 'tomoya.ogawa@poweredge.co.jp',
-      subject: 'Re: 定例ミーティングについて (小川 智矢)',
+      from: 'yamada@example.com',
+      subject: 'Re: 定例ミーティングについて (山田 太郎)',
       body: 'よろしくお願いします',
     };
     const check3 = emailService.isAttendanceEmail(normalEmail);
     expect(check3.isAttendance).toBe(false);
   });
 
-  test('isAnnouncementEmail identifies allpe, t-ohnuma, and furukawa emails', () => {
+  test('isAnnouncementEmail identifies allpe and custom announcement emails', () => {
     // Subject contains allpe
     expect(
       emailService.isAnnouncementEmail({
         id: '1',
         date: '',
-        from: 'kanri@poweredge.co.jp',
+        from: 'info@example.com',
         subject: '[allpe] 10月度セキュリティ講習の実施について',
-        body: '',
-      })
-    ).toBe(true);
-
-    // Subject contains t-ohnuma
-    expect(
-      emailService.isAnnouncementEmail({
-        id: '2',
-        date: '',
-        from: 'somu@poweredge.co.jp',
-        subject: '【連絡】[t-ohnuma] 業務引き継ぎの件',
-        body: '',
-      })
-    ).toBe(true);
-
-    // Sender is furukawa
-    expect(
-      emailService.isAnnouncementEmail({
-        id: '3',
-        date: '',
-        from: 'furukawa@poweredge.co.jp',
-        subject: '全社方針について',
-        body: '',
-      })
-    ).toBe(true);
-
-    expect(
-      emailService.isAnnouncementEmail({
-        id: '4',
-        date: '',
-        from: 'furkawa@poweredge.co.jp',
-        subject: '人事異動のお知らせ',
         body: '',
       })
     ).toBe(true);
@@ -167,13 +173,54 @@ describe('EmailProcessingService', () => {
     // Normal email
     expect(
       emailService.isAnnouncementEmail({
-        id: '5',
+        id: '2',
         date: '',
         from: 'client@example.com',
         subject: '打ち合わせ日程のご相談',
         body: '',
       })
     ).toBe(false);
+  });
+
+  test('manager direct routing and recipient exclusion', () => {
+    process.env.MANAGER_REPORT_FROM_EMAILS = 'boss@example.com, director@example.com';
+    process.env.EXCLUDE_ANNOUNCEMENT_TO_EMAILS = 'boss@example.com, secret@example.com';
+    process.env.MANAGER_REPORT_KEYWORDS = 'boss-tag, mgr-direct';
+    const customService = new EmailProcessingService();
+
+    // 1. Email from boss@example.com is manager direct email
+    const fromBoss: GmailIncomingMessage = {
+      id: 'boss-1',
+      date: '',
+      from: 'boss@example.com',
+      subject: '来期の戦略について',
+      body: '来期の体制変更について共有します。',
+    };
+    expect(customService.isManagerDirectEmail(fromBoss)).toBe(true);
+    // Should NOT be treated as general announcement
+    expect(customService.isAnnouncementEmail(fromBoss)).toBe(false);
+
+    // 2. Email where TO matches EXCLUDE_ANNOUNCEMENT_TO_EMAILS is excluded completely
+    const toBoss: GmailIncomingMessage = {
+      id: 'boss-2',
+      date: '',
+      from: 'someone@example.com',
+      to: 'boss@example.com',
+      subject: '[allpe] 全社連絡事項',
+      body: 'テスト',
+    };
+    expect(customService.isAnnouncementEmail(toBoss)).toBe(false);
+    expect(customService.isManagerDirectEmail(toBoss)).toBe(false);
+
+    // 3. Subject containing configured manager keyword is manager direct email
+    const subjectManager: GmailIncomingMessage = {
+      id: 'mgr-1',
+      date: '',
+      from: 'hr@example.com',
+      subject: '【連絡】[boss-tag] 業務引き継ぎの件',
+      body: '',
+    };
+    expect(customService.isManagerDirectEmail(subjectManager)).toBe(true);
   });
 
   test('supports custom comma-separated keywords and email addresses from environment variables', () => {
@@ -189,8 +236,8 @@ describe('EmailProcessingService', () => {
       customEmailService.isAttendanceEmail({
         id: 'c-1',
         date: '',
-        from: 'tomoya.ogawa@poweredge.co.jp',
-        subject: '【勤怠申請】09/18 小川　智矢',
+        from: 'yamada@example.com',
+        subject: '【勤怠申請】09/18 山田 太郎',
         body: '',
       }).isAttendance
     ).toBe(true);
@@ -199,8 +246,8 @@ describe('EmailProcessingService', () => {
       customEmailService.isAttendanceEmail({
         id: 'c-2',
         date: '',
-        from: 'tomoya.ogawa@poweredge.co.jp',
-        subject: '【休暇連絡】09/18 小川　智矢',
+        from: 'yamada@example.com',
+        subject: '【休暇連絡】09/18 山田 太郎',
         body: '',
       }).isAttendance
     ).toBe(true);
@@ -218,46 +265,30 @@ describe('EmailProcessingService', () => {
         body: '',
       })
     ).toBe(true);
-
-    expect(
-      customEmailService.isAnnouncementEmail({
-        id: 'c-4',
-        date: '',
-        from: 'hr@example.com',
-        subject: '定期健康診断のご案内',
-        body: '',
-      })
-    ).toBe(true);
-
-    // Cleanup
-    delete process.env.ATTENDANCE_KEYWORDS;
-    delete process.env.ANNOUNCEMENT_KEYWORDS;
-    delete process.env.ANNOUNCEMENT_FROM_EMAILS;
   });
 
-  test('parseAttendanceRecord extracts fields cleanly', async () => {
+  test('parseAttendanceRecord extracts leave type, date, same-day flag, and reason', async () => {
     const msg: GmailIncomingMessage = {
-      id: 'msg-100',
-      date: '2026-09-18T08:15:00Z',
-      from: 'tomoya.ogawa@poweredge.co.jp',
-      subject: '[applies:40797][全休]2026-09-18 当日申請 小川　智矢',
-      body: 'お疲れ様です。小川です。\n事由: 発熱のため終日お休みをいただきます。',
+      id: 'p-1',
+      date: '2026-09-18T08:00:00Z',
+      from: 'yamada@example.com',
+      subject: '[applies:40797][午前休]2026-09-19 事前申請 山田 太郎',
+      body: '事由: 市役所手続きのため午前休をいただきます。\nよろしくお願いいたします。',
     };
 
-    const record = await emailService.parseAttendanceRecord(msg, '小川 智矢');
-    expect(record.memberName).toBe('小川 智矢');
-    expect(record.slackUserId).toBe('U0AQRJZK004');
-    expect(record.leaveType).toBe('全休');
-    expect(record.date).toBe('2026-09-18');
-    expect(record.isSameDay).toBe(true);
-    expect(record.reason).toContain('発熱のため');
+    const record = await emailService.parseAttendanceRecord(msg, '山田 太郎');
+    expect(record.memberName).toBe('山田 太郎');
+    expect(record.leaveType).toBe('午前休');
+    expect(record.date).toBe('2026-09-19');
+    expect(record.isSameDay).toBe(false);
+    expect(record.reason).toContain('市役所手続き');
   });
 
-  test('formatAttendanceSummaryMessage generates Slack formatted text', () => {
+  test('formatAttendanceSummaryMessage generates clear Slack message', () => {
     const records = [
       {
-        memberName: '小川 智矢',
-        slackUserId: 'U0AQRJZK004',
+        memberName: '山田 太郎',
+        slackUserId: 'U11111111',
         date: '2026-09-18',
         leaveType: '全休',
         isSameDay: true,
@@ -265,8 +296,8 @@ describe('EmailProcessingService', () => {
         rawSubject: '...',
       },
       {
-        memberName: '朝岡 拓人',
-        slackUserId: 'U0AQ6QH94AK',
+        memberName: '佐藤 花子',
+        slackUserId: 'U22222222',
         date: '2026-09-18',
         leaveType: '在宅',
         isSameDay: false,
@@ -277,12 +308,16 @@ describe('EmailProcessingService', () => {
     const message = emailService.formatAttendanceSummaryMessage(records, '2026-09-18');
     expect(message).toContain('チーム勤怠連絡');
     expect(message).toContain('昨日12:00以降の申請');
-    expect(message).toContain('・*小川 智矢*: [全休] [09/18] [当日申請] (体調不良のため終日お休み)');
-    expect(message).toContain('・*朝岡 拓人*: [在宅] [09/18]');
+    expect(message).toContain('・*山田 太郎*: [全休] [09/18] [当日申請] (体調不良のため終日お休み)');
+    expect(message).toContain('・*佐藤 花子*: [在宅] [09/18]');
     expect(message).toContain('その他メンバー: 申請なし（通常勤務）');
   });
 
   test('processIncomingEmails routes messages to manager DM and general channel', async () => {
+    process.env.MANAGER_REPORT_FROM_EMAILS = 'boss@example.com';
+    process.env.EXCLUDE_ANNOUNCEMENT_TO_EMAILS = 'exclude@example.com';
+    const testService = new EmailProcessingService();
+
     const mockPostMessage = jest.fn().mockResolvedValue({ ok: true });
     const mockClient = {
       chat: {
@@ -294,16 +329,31 @@ describe('EmailProcessingService', () => {
       {
         id: 'msg-att',
         date: '2026-09-18T08:00:00Z',
-        from: 'tomoya.ogawa@poweredge.co.jp',
-        subject: '[applies:40797][全休]2026-09-18 当日申請 小川　智矢',
+        from: 'yamada@example.com',
+        subject: '[applies:40797][全休]2026-09-18 当日申請 山田 太郎',
         body: '事由: 体調不良',
+      },
+      {
+        id: 'msg-direct',
+        date: '2026-09-18T08:30:00Z',
+        from: 'boss@example.com',
+        subject: '役員会議の共有事項',
+        body: 'マネージャー向けに来期の重要方針を共有します。',
       },
       {
         id: 'msg-ann',
         date: '2026-09-18T09:00:00Z',
-        from: 'furukawa@poweredge.co.jp',
-        subject: '【全社連絡】社内イベント開催について',
+        from: 'info@example.com',
+        subject: '[allpe] 社内イベント開催について',
         body: '来月社内イベントを開催します。詳細は追って連絡します。',
+      },
+      {
+        id: 'msg-excluded',
+        date: '2026-09-18T09:10:00Z',
+        from: 'info@example.com',
+        to: 'exclude@example.com',
+        subject: '[allpe] 除外対象メール',
+        body: 'このメールは除外されるべきです',
       },
       {
         id: 'msg-unrelated',
@@ -314,31 +364,40 @@ describe('EmailProcessingService', () => {
       },
     ];
 
-    const result = await emailService.processIncomingEmails(
+    const result = await testService.processIncomingEmails(
       messages,
       mockClient,
       {
-        managerId: 'U0AQGV96Q4S',
-        channelId: 'C0AQETFBF8W',
+        managerId: 'U_MANAGER',
+        channelId: 'C_GENERAL',
       }
     );
 
     expect(result.attendanceRecords).toHaveLength(1);
+    expect(result.managerDirectEmails).toHaveLength(1);
     expect(result.announcements).toHaveLength(1);
-    expect(result.ignoredCount).toBe(1);
+    expect(result.ignoredCount).toBe(2); // msg-excluded and msg-unrelated
 
-    // DM to manager
+    // DM to manager for attendance
     expect(mockPostMessage).toHaveBeenCalledWith(
       expect.objectContaining({
-        channel: 'U0AQGV96Q4S',
-        text: expect.stringContaining('小川'),
+        channel: 'U_MANAGER',
+        text: expect.stringContaining('山田 太郎'),
       })
     );
 
-    // Post to general channel
+    // DM to manager for direct email
     expect(mockPostMessage).toHaveBeenCalledWith(
       expect.objectContaining({
-        channel: 'C0AQETFBF8W',
+        channel: 'U_MANAGER',
+        text: expect.stringContaining('役員会議の共有事項'),
+      })
+    );
+
+    // Post to general channel for allpe announcement
+    expect(mockPostMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: 'C_GENERAL',
         text: expect.stringContaining('社内イベント開催について'),
       })
     );
@@ -354,9 +413,9 @@ describe('Historical Weekly Report Logic (weekly/service.ts)', () => {
           var wrTargetDateId = 735;
           var bothEndsId = { oldestId: 36, newestId: 735 };
           var filingData = [
-            { staffId: 101, staffName: "小川　智矢", newestWrTargetDateId: 735, filingDatetime: "2026-09-15 11:30:00" },
-            { staffId: 102, staffName: "朝岡　拓人", newestWrTargetDateId: 735, filingDatetime: "2026-09-15 12:00:00" },
-            { staffId: 103, staffName: "川上　慶太", newestWrTargetDateId: 735, filingDatetime: "" }
+            { staffId: 101, staffName: "メンバーA", newestWrTargetDateId: 735, filingDatetime: "2026-09-15 11:30:00" },
+            { staffId: 102, staffName: "メンバーB", newestWrTargetDateId: 735, filingDatetime: "2026-09-15 12:00:00" },
+            { staffId: 103, staffName: "メンバーC", newestWrTargetDateId: 735, filingDatetime: "" }
           ];
         </script>
       </body>
@@ -371,16 +430,15 @@ describe('Historical Weekly Report Logic (weekly/service.ts)', () => {
   test('extractSubmittedStaffRecords returns submitted members for current week', () => {
     const records = extractSubmittedStaffRecords(sampleTopHtml);
     expect(records).toHaveLength(2);
-    expect(records.map((r) => r.staffName)).toContain('小川　智矢');
-    expect(records.map((r) => r.staffName)).toContain('朝岡　拓人');
-    expect(records.map((r) => r.staffName)).not.toContain('川上　慶太');
+    expect(records.map((r) => r.staffName)).toContain('メンバーA');
+    expect(records.map((r) => r.staffName)).toContain('メンバーB');
+    expect(records.map((r) => r.staffName)).not.toContain('メンバーC');
     expect(records[0].wrTargetDateId).toBe(735);
   });
 
   test('extractSubmittedStaffRecords uses targetWrDateId for historical inquiries', () => {
     const targetHistoricalId = 734; // 1 week ago
     const records = extractSubmittedStaffRecords(sampleTopHtml, targetHistoricalId);
-    // All members with staffId in filingData are candidates for historical inquiry
     expect(records.length).toBeGreaterThanOrEqual(3);
     records.forEach((r) => {
       expect(r.wrTargetDateId).toBe(734);

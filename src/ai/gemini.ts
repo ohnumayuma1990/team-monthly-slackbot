@@ -140,7 +140,7 @@ export class GeminiService {
   ): Promise<string> {
     if (reports.length === 0) {
       return (
-        `📊 *【週報AI要約】大沼チーム状況サマリー* (${weekLabel})\n\n` +
+        `📊 *【週報AI要約】チーム状況サマリー* (${weekLabel})\n\n` +
         `提出済みの週報データがありませんでした。`
       );
     }
@@ -149,14 +149,14 @@ export class GeminiService {
       // Fallback if GEMINI_API_KEY is not configured
       const memberList = reports.map((r) => `・${r.staffName}（所感あり）`).join('\n');
       return (
-        `📊 *【週報要約（簡易版）】大沼チーム状況サマリー* (${weekLabel})\n\n` +
+        `📊 *【週報要約（簡易版）】チーム状況サマリー* (${weekLabel})\n\n` +
         `_※GEMINI_API_KEYが未設定のため、AI要約をスキップし提出者一覧を表示しています。_\n\n` +
         `提出者 (${reports.length}名):\n${memberList}`
       );
     }
 
     const systemInstruction =
-      'あなたはエンジニアチームマネージャー（大沼さん）の専属AI参謀です。' +
+      'あなたはエンジニアチームマネージャーの専属AI参謀です。' +
       '提出されたチームメンバーの週報内容を分析し、マネージャーが1分で状況を正確に把握し、必要なアクション（フォロー、声掛け、課題解決）に繋げられる高品質な要約レポートを作成してください。\n\n' +
       '【重要ルール】\n' +
       '1. マネージャー視点で、メンバーが直面している課題・困りごと・健康面や残業などの兆候があれば最優先でピックアップしてください。\n' +
@@ -194,7 +194,7 @@ export class GeminiService {
       `提出人数: ${reports.length}名\n\n` +
       `以下が提出された各メンバーの週報内容です：\n\n` +
       `${formattedReports}\n\n` +
-      `上記をもとに、大沼マネージャー向けの週報サマリーを作成してください。`;
+      `上記をもとに、マネージャー向けの週報サマリーを作成してください。`;
 
     try {
       const summary = await this.generateText(prompt, systemInstruction);
@@ -204,7 +204,7 @@ export class GeminiService {
         `━━━━━━━━━━━━━━━━━━━━━━\n` +
         `${summary.trim()}\n` +
         `━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `_※このメッセージは大沼さんのDMにのみ送信されています（他メンバー非公開）_`
+        `_※このメッセージはマネージャーのDMにのみ送信されています（他メンバー非公開）_`
       );
     } catch (e) {
       console.error('Failed to generate weekly reports summary via Gemini:', e);

@@ -17,7 +17,7 @@ export function isNameMatch(nameA: string, nameB: string): boolean {
   const normB = normalizeName(nameB);
   if (!normA || !normB) return false;
   if (normA === normB) return true;
-  // Support last-name or partial match (e.g., '大沼' matches '大沼佑磨')
+  // Support last-name or partial match (e.g., '山田' matches '山田太郎')
   if (normA.length >= 2 && normB.length >= 2) {
     if (normA.startsWith(normB) || normB.startsWith(normA)) {
       return true;

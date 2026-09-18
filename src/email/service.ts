@@ -13,11 +13,11 @@ import { isNameMatch, normalizeName } from '../sheets/parser';
 import { GeminiService } from '../ai/gemini';
 
 export const DEFAULT_ATTENDANCE_KEYWORDS = ['applies'];
-export const DEFAULT_ANNOUNCEMENT_KEYWORDS = ['allpe', 't-ohnuma'];
-export const DEFAULT_ANNOUNCEMENT_FROM_EMAILS = [
-  'furukawa@poweredge.co.jp',
-  'furkawa@poweredge.co.jp',
-];
+export const DEFAULT_ANNOUNCEMENT_KEYWORDS = ['allpe'];
+export const DEFAULT_ANNOUNCEMENT_FROM_EMAILS: string[] = [];
+export const DEFAULT_MANAGER_REPORT_KEYWORDS: string[] = [];
+export const DEFAULT_MANAGER_REPORT_FROM_EMAILS: string[] = [];
+export const DEFAULT_EXCLUDE_ANNOUNCEMENT_TO_EMAILS: string[] = [];
 
 /**
  * Parses a comma-separated string from environment variables into a trimmed array.
@@ -38,6 +38,7 @@ export function parseCommaSeparatedList(
 export interface EmailProcessingResult {
   attendanceRecords: AttendanceRecord[];
   announcements: AllHandsAnnouncement[];
+  managerDirectEmails: AllHandsAnnouncement[];
   ignoredCount: number;
 }
 
@@ -79,6 +80,72 @@ export class EmailProcessingService {
   }
 
   /**
+   * Returns the list of sender emails to report directly to manager DM (from env MANAGER_REPORT_FROM_EMAILS).
+   */
+  getManagerReportFromEmails(): string[] {
+    return parseCommaSeparatedList(
+      process.env.MANAGER_REPORT_FROM_EMAILS,
+      DEFAULT_MANAGER_REPORT_FROM_EMAILS
+    );
+  }
+
+  /**
+   * Returns the list of recipient emails to exclude from announcement notifications (from env EXCLUDE_ANNOUNCEMENT_TO_EMAILS).
+   */
+  getExcludeAnnouncementToEmails(): string[] {
+    return parseCommaSeparatedList(
+      process.env.EXCLUDE_ANNOUNCEMENT_TO_EMAILS,
+      DEFAULT_EXCLUDE_ANNOUNCEMENT_TO_EMAILS
+    );
+  }
+
+  /**
+   * Returns the list of manager keywords in subject (from env MANAGER_REPORT_KEYWORDS or default).
+   */
+  getManagerReportKeywords(): string[] {
+    return parseCommaSeparatedList(
+      process.env.MANAGER_REPORT_KEYWORDS,
+      DEFAULT_MANAGER_REPORT_KEYWORDS
+    );
+  }
+
+  /**
+   * Checks if an email recipient is in the exclusion list.
+   */
+  isExcludeRecipient(to?: string): boolean {
+    if (!to) return false;
+    const excludeEmails = this.getExcludeAnnouncementToEmails();
+    if (excludeEmails.length === 0) return false;
+    const toLower = to.toLowerCase();
+    return excludeEmails.some((email) => toLower.includes(email.toLowerCase()));
+  }
+
+  /**
+   * Checks if an email is a manager direct report email.
+   * Rule: From matches MANAGER_REPORT_FROM_EMAILS or Subject matches MANAGER_REPORT_KEYWORDS,
+   * AND recipient is not in exclusion list.
+   */
+  isManagerDirectEmail(msg: GmailIncomingMessage): boolean {
+    if (this.isExcludeRecipient(msg.to)) {
+      return false;
+    }
+
+    const from = (msg.from || '').toLowerCase();
+    const reportFromEmails = this.getManagerReportFromEmails();
+    if (reportFromEmails.some((email) => from.includes(email.toLowerCase()))) {
+      return true;
+    }
+
+    const subject = (msg.subject || '').toLowerCase();
+    const managerKeywords = this.getManagerReportKeywords();
+    if (managerKeywords.some((kw) => subject.includes(kw.toLowerCase()))) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
    * Checks if an email is an attendance notification for a team member.
    * Rule: Subject contains any attendance keyword AND a registered team member's name.
    */
@@ -109,11 +176,22 @@ export class EmailProcessingService {
 
   /**
    * Checks if an email is an all-hands or important announcement.
-   * Rule: Subject contains any announcement keyword OR From contains any announcement sender email.
+   * Rule: Exclude recipient matches EXCLUDE_ANNOUNCEMENT_TO_EMAILS.
+   * Sender is not in MANAGER_REPORT_FROM_EMAILS (which goes to manager DM instead).
+   * Subject contains announcement keyword OR From contains announcement sender email.
    */
   isAnnouncementEmail(msg: GmailIncomingMessage): boolean {
-    const subject = (msg.subject || '').toLowerCase();
+    if (this.isExcludeRecipient(msg.to)) {
+      return false;
+    }
+
     const from = (msg.from || '').toLowerCase();
+    const reportFromEmails = this.getManagerReportFromEmails();
+    if (reportFromEmails.some((email) => from.includes(email.toLowerCase()))) {
+      return false;
+    }
+
+    const subject = (msg.subject || '').toLowerCase();
 
     // 1. Subject keyword match
     const keywords = this.getAnnouncementKeywords();
@@ -304,7 +382,33 @@ export class EmailProcessingService {
       `${items}\n` +
       `・_その他メンバー: 申請なし（通常勤務）_\n` +
       `━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `_※大沼マネージャーのDMにのみ配信されています。_`
+      `_※マネージャーのDMにのみ配信されています。_`
+    );
+  }
+
+  /**
+   * Formats manager direct report email message for manager DM.
+   */
+  formatManagerDirectMessage(announcement: AllHandsAnnouncement): string {
+    let keyPointsText = '';
+    if (announcement.keyPoints && announcement.keyPoints.length > 0) {
+      keyPointsText =
+        `\n💡 *要点まとめ:*\n` +
+        announcement.keyPoints.map((p) => `・${p}`).join('\n');
+    }
+
+    const deadlineText = announcement.deadline
+      ? `\n⏰ *対応期日:* *${announcement.deadline}*`
+      : '';
+
+    return (
+      `📩 *【マネージャー宛 重要メール報告（AI要約）】*\n` +
+      `*件名:* ${announcement.subject}\n` +
+      `*送信者:* ${announcement.from}\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `📝 *概要:*\n${announcement.summary}${keyPointsText}${deadlineText}\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `_※マネージャーのDMにのみ配信されています。詳細はGmailをご確認ください。_`
     );
   }
 
@@ -347,6 +451,7 @@ export class EmailProcessingService {
   ): Promise<EmailProcessingResult> {
     const attendanceRecords: AttendanceRecord[] = [];
     const announcements: AllHandsAnnouncement[] = [];
+    const managerDirectEmails: AllHandsAnnouncement[] = [];
     let ignoredCount = 0;
 
     const managerSlackId = options?.managerId || getManagerSlackId();
@@ -367,7 +472,14 @@ export class EmailProcessingService {
         continue;
       }
 
-      // 2. Check announcement
+      // 2. Check manager direct report email (e.g. from configured managers/executives)
+      if (this.isManagerDirectEmail(msg)) {
+        const directEmail = await this.summarizeAnnouncement(msg);
+        managerDirectEmails.push(directEmail);
+        continue;
+      }
+
+      // 3. Check announcement (e.g. allpe)
       if (this.isAnnouncementEmail(msg)) {
         const announcement = await this.summarizeAnnouncement(msg);
         announcements.push(announcement);
@@ -390,7 +502,25 @@ export class EmailProcessingService {
       }
     }
 
-    // 2. Send each announcement to General Channel
+    // 2. Send manager direct emails to Manager DM
+    if (managerDirectEmails.length > 0 && managerSlackId) {
+      for (const directEmail of managerDirectEmails) {
+        const text = this.formatManagerDirectMessage(directEmail);
+        try {
+          await client.chat.postMessage({
+            channel: managerSlackId,
+            text,
+          });
+        } catch (err) {
+          console.error(
+            'Failed to send manager direct email to manager DM:',
+            err
+          );
+        }
+      }
+    }
+
+    // 3. Send each announcement to General Channel
     if (announcements.length > 0 && generalChannelId) {
       for (const ann of announcements) {
         const text = this.formatAnnouncementMessage(ann);
@@ -411,6 +541,7 @@ export class EmailProcessingService {
     return {
       attendanceRecords,
       announcements,
+      managerDirectEmails,
       ignoredCount,
     };
   }

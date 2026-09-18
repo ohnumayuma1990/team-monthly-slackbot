@@ -179,6 +179,7 @@ export function createCustomRoutes(
               totalReceived: rawMessages.length,
               attendanceCount: result.attendanceRecords.length,
               announcementCount: result.announcements.length,
+              managerDirectCount: result.managerDirectEmails?.length || 0,
               ignoredCount: result.ignoredCount,
             })
           );

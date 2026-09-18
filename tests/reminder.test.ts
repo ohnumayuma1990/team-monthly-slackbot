@@ -14,14 +14,14 @@ describe('ReminderService', () => {
 
   it('maps unsubmitted members to Slack User IDs and formats reminder text', async () => {
     process.env.MEMBER_SLACK_MAPPING = JSON.stringify({
-      大沼佑磨: 'U0001',
+      山田太郎: 'U0001',
       未入力太郎: 'U0002',
     });
 
     const mockSheetsService: any = {
       getUnsubmittedMembers: jest.fn().mockResolvedValue([
         {
-          name: '大沼 佑磨',
+          name: '山田 太郎',
           missingIndividual: false,
           missingGroupwork: true,
         },
@@ -59,5 +59,26 @@ describe('ReminderService', () => {
     expect(callArg.text).toContain('<@U0002>');
     expect(callArg.text).toContain('GW振り返り');
     expect(callArg.text).toContain('個人近況');
+  });
+
+  it('filters unsubmitted members according to TEAM_MEMBERS_CONFIG', async () => {
+    process.env.TEAM_MEMBERS_CONFIG = JSON.stringify([
+      { name: '山田 太郎', slackId: 'U_MEMBER_1', role: 'member' },
+    ]);
+
+    const mockSheetsService: any = {
+      getUnsubmittedMembers: jest.fn().mockResolvedValue([
+        { name: '山田 太郎', missingIndividual: true, missingGroupwork: false },
+        { name: '退職者 A', missingIndividual: true, missingGroupwork: true },
+      ]),
+    };
+
+    const reminderService = new ReminderService(mockSheetsService);
+    const unsubmitted = await reminderService.getUnsubmittedList('26_9月');
+
+    // '退職者 A' is not in TEAM_MEMBERS_CONFIG, so filtered out
+    expect(unsubmitted).toHaveLength(1);
+    expect(unsubmitted[0].name).toBe('山田 太郎');
+    expect(unsubmitted[0].slackUserId).toBe('U_MEMBER_1');
   });
 });

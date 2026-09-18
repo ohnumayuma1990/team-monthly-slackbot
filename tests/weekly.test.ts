@@ -19,11 +19,12 @@ describe('WeeklyCheckService', () => {
   beforeEach(() => {
     process.env = {
       ...originalEnv,
-      MANAGER_SLACK_USER_ID: 'U_ONUMA_123',
-      MEMBER_SLACK_MAPPING: JSON.stringify({
-        '川上 慶太': 'U_KAWAKAMI_456',
-        '長谷川 明莉': 'U_HASEGAWA_789',
-      }),
+      MANAGER_SLACK_USER_ID: 'U_MGR_000',
+      TEAM_MEMBERS_CONFIG: JSON.stringify([
+        { name: '山田 太郎', slackId: 'U_YAMADA_001', role: 'member' },
+        { name: '佐藤 花子', slackId: 'U_SATO_002', role: 'member' },
+        { name: '鈴木 一郎', slackId: 'U_SUZUKI_003', role: 'member' },
+      ]),
     };
   });
 
@@ -33,10 +34,10 @@ describe('WeeklyCheckService', () => {
 
   it('formats Slack mentions correctly using mapping', () => {
     const service = new WeeklyCheckService();
-    expect(service.getManagerMention()).toBe('<@U_ONUMA_123>');
-    expect(service.getSlackMention('川上 慶太')).toBe('<@U_KAWAKAMI_456>');
-    expect(service.getSlackMention('長谷川　明莉')).toBe('<@U_HASEGAWA_789>');
-    expect(service.getSlackMention('小川 智矢')).toBe('<@U0AQRJZK004>');
+    expect(service.getManagerMention()).toBe('<@U_MGR_000>');
+    expect(service.getSlackMention('山田 太郎')).toBe('<@U_YAMADA_001>');
+    expect(service.getSlackMention('佐藤　花子')).toBe('<@U_SATO_002>');
+    expect(service.getSlackMention('鈴木 一郎')).toBe('<@U_SUZUKI_003>');
     expect(service.getSlackMention('外部 ゲスト')).toBe('外部 ゲストさん');
   });
 
@@ -47,14 +48,14 @@ describe('WeeklyCheckService', () => {
       checkedAt: new Date(2026, 8, 15),
       weeklyReport: {
         weekLabel: '先週分',
-        submitted: ['小川 智矢'],
-        unsubmitted: ['川上 慶太'],
+        submitted: ['山田 太郎'],
+        unsubmitted: ['佐藤 花子'],
         totalMembers: 2,
       },
       gSession: {
         inactiveMembers: [
           {
-            name: '長谷川 明莉',
+            name: '鈴木 一郎',
             daysSinceLastLogin: 8,
             lastLoginDate: '9/7',
             isInactive: true,
@@ -62,7 +63,7 @@ describe('WeeklyCheckService', () => {
         ],
         activeMembers: [
           {
-            name: '小川 智矢',
+            name: '山田 太郎',
             daysSinceLastLogin: 1,
             isInactive: false,
           },
@@ -74,9 +75,9 @@ describe('WeeklyCheckService', () => {
 
     // Check that alert header mentions both the manager and both flagged members
     expect(message).toContain('【要確認】');
-    expect(message).toContain('<@U_ONUMA_123>');
-    expect(message).toContain('<@U_KAWAKAMI_456>');
-    expect(message).toContain('<@U_HASEGAWA_789>');
+    expect(message).toContain('<@U_MGR_000>');
+    expect(message).toContain('<@U_SATO_002>');
+    expect(message).toContain('<@U_SUZUKI_003>');
 
     // Check sections
     expect(message).toContain('1. 週報提出状況');
@@ -90,22 +91,22 @@ describe('WeeklyCheckService', () => {
       checkedAt: new Date(2026, 8, 15),
       weeklyReport: {
         weekLabel: '先週分',
-        submitted: ['小川 智矢', '川上 慶太'],
+        submitted: ['山田 太郎', '佐藤 花子'],
         unsubmitted: [],
         totalMembers: 2,
       },
       gSession: {
         inactiveMembers: [],
         activeMembers: [
-          { name: '小川 智矢', daysSinceLastLogin: 1, isInactive: false },
-          { name: '川上 慶太', daysSinceLastLogin: 2, isInactive: false },
+          { name: '山田 太郎', daysSinceLastLogin: 1, isInactive: false },
+          { name: '佐藤 花子', daysSinceLastLogin: 2, isInactive: false },
         ],
       },
     };
 
     const message = service.generateSummaryMessage(summary);
 
-    expect(message).toContain('【定期チェック完了】大沼チーム全員が週報提出済み＆GSログイン確認済みです！');
+    expect(message).toContain('【定期チェック完了】チーム全員が週報提出済み＆GSログイン確認済みです！');
     expect(message).not.toContain('【要確認】');
   });
 
@@ -117,10 +118,9 @@ describe('WeeklyCheckService', () => {
         09/15 23:59:00 </label><label for="reportingDate">締切りの週報</label>
         <div><label>(対象期間：</label><label>09/06</label><label> ～</label><label>09/12</label></div>
         var filingData = [
-          { staffId: 100, staffName: '大沼　佑麻', staffNum: '000100', filingDatetime: '2026-09-15 19:37:24', unsubmittedCount: [] },
-          { staffId: 156, staffName: '小川　智矢', staffNum: '000156', filingDatetime: '2026-09-15 20:47:01', unsubmittedCount: [[156, 2]] },
-          { staffId: 320, staffName: '朝岡　拓人', staffNum: '000320', filingDatetime: null, unsubmittedCount: [] },
-          { staffId: 526, staffName: '川上　慶太', staffNum: '000526', filingDatetime: '', unsubmittedCount: [[526, 2]] }
+          { staffId: 101, staffName: '山田　太郎', staffNum: '000101', filingDatetime: '2026-09-15 20:47:01', unsubmittedCount: [] },
+          { staffId: 102, staffName: '佐藤　花子', staffNum: '000102', filingDatetime: '', unsubmittedCount: [[102, 2]] },
+          { staffId: 103, staffName: '鈴木　一郎', staffNum: '000103', filingDatetime: null, unsubmittedCount: [] }
         ];
         </script>
       </head>
@@ -130,9 +130,9 @@ describe('WeeklyCheckService', () => {
     const result = parseWeeklyReportTopHtml(mockTopHtml);
 
     expect(result.weekLabel).toContain('09/15 23:59:00 締切');
-    expect(result.submitted).toContain('小川　智矢');
-    expect(result.unsubmitted).toContain('朝岡　拓人');
-    expect(result.unsubmitted).toContain('川上　慶太');
+    expect(result.submitted).toContain('山田 太郎');
+    expect(result.unsubmitted).toContain('佐藤 花子');
+    expect(result.unsubmitted).toContain('鈴木 一郎');
   });
 
   it('accurately parses GroupSession man050.do HTML and identifies inactive members (>= 7 days)', () => {
@@ -141,20 +141,20 @@ describe('WeeklyCheckService', () => {
         <tbody>
           <tr><th>社員/職員番号</th><th>氏名</th><th>役職</th><th>最終ログイン時間</th></tr>
           <tr class="lastlogin_tdBgColor6">
-            <td align="left" nowrap>000526</td>
-            <td align="left" nowrap><a href="#">川上　慶太</a></td>
+            <td align="left" nowrap>000102</td>
+            <td align="left" nowrap><a href="#">佐藤　花子</a></td>
             <td align="left" nowrap></td>
             <td align="center" nowrap>2026/09/09 21:12:26</td>
           </tr>
           <tr class="lastlogin_tdBgColor6">
-            <td align="left" nowrap>000548</td>
-            <td align="left" nowrap><a href="#">石割　朝比</a></td>
+            <td align="left" nowrap>000103</td>
+            <td align="left" nowrap><a href="#">鈴木　一郎</a></td>
             <td align="left" nowrap></td>
             <td align="center" nowrap>2026/09/11 21:06:22</td>
           </tr>
           <tr class="lastlogin_tdBgColor1">
-            <td align="left" nowrap>000156</td>
-            <td align="left" nowrap><a href="#">小川　智矢</a></td>
+            <td align="left" nowrap>000101</td>
+            <td align="left" nowrap><a href="#">山田　太郎</a></td>
             <td align="left" nowrap></td>
             <td align="center" nowrap>2026/09/17 08:52:21</td>
           </tr>
@@ -165,45 +165,44 @@ describe('WeeklyCheckService', () => {
     const fixedNow = new Date('2026-09-17T21:25:00');
     const result = parseGSessionMan050Html(mockMan050Html, fixedNow, 7);
 
-    // 川上 is 8 days ago (2026/09/09) -> inactive >= 7 days
-    const kawakami = result.inactiveMembers.find((m) => m.name.includes('川上'));
-    expect(kawakami).toBeDefined();
-    expect(kawakami?.isInactive).toBe(true);
-    expect(kawakami?.daysSinceLastLogin).toBe(8);
+    // 佐藤 is 8 days ago (2026/09/09) -> inactive >= 7 days
+    const sato = result.inactiveMembers.find((m) => m.name.includes('佐藤'));
+    expect(sato).toBeDefined();
+    expect(sato?.isInactive).toBe(true);
+    expect(sato?.daysSinceLastLogin).toBe(8);
 
-    // 石割 is 6 days ago (2026/09/11) -> active (< 7 days)
-    const ishiwari = result.activeMembers.find((m) => m.name.includes('石割'));
-    expect(ishiwari).toBeDefined();
-    expect(ishiwari?.isInactive).toBe(false);
+    // 鈴木 is 6 days ago (2026/09/11) -> active (< 7 days)
+    const suzuki = result.activeMembers.find((m) => m.name.includes('鈴木'));
+    expect(suzuki).toBeDefined();
+    expect(suzuki?.isInactive).toBe(false);
 
-    // 小川 is today (2026/09/17) -> active
-    const ogawa = result.activeMembers.find((m) => m.name.includes('小川'));
-    expect(ogawa).toBeDefined();
-    expect(ogawa?.isInactive).toBe(false);
+    // 山田 is today (2026/09/17) -> active
+    const yamada = result.activeMembers.find((m) => m.name.includes('山田'));
+    expect(yamada).toBeDefined();
+    expect(yamada?.isInactive).toBe(false);
   });
 
   it('extracts submitted staff records with staffId and targetDateId from filingData', () => {
     const mockTopHtml = `
       var filingData = [
-        { staffId: 121, staffName: '小川　智矢', filingDatetime: '2026-09-15 20:47:01', newestWrTargetDateId: 734 },
-        { staffId: 381, staffName: '小林　弘和', filingDatetime: '2026-09-15 18:20:51', latestWrTargetDateId: 735 },
-        { staffId: 273, staffName: '朝岡　拓人', filingDatetime: null, newestWrTargetDateId: 734 },
-        { staffId: 489, staffName: '川上　慶太', filingDatetime: '', newestWrTargetDateId: 734 }
+        { staffId: 101, staffName: '山田　太郎', filingDatetime: '2026-09-15 20:47:01', newestWrTargetDateId: 734 },
+        { staffId: 102, staffName: '佐藤　花子', filingDatetime: '2026-09-15 18:20:51', latestWrTargetDateId: 735 },
+        { staffId: 103, staffName: '鈴木　一郎', filingDatetime: null, newestWrTargetDateId: 734 }
       ];
     `;
 
     const records = extractSubmittedStaffRecords(mockTopHtml);
     expect(records.length).toBe(2);
 
-    const ogawa = records.find((r) => r.staffName === '小川　智矢');
-    expect(ogawa).toBeDefined();
-    expect(ogawa?.staffId).toBe(121);
-    expect(ogawa?.wrTargetDateId).toBe(734);
+    const yamada = records.find((r) => r.staffName === '山田 太郎');
+    expect(yamada).toBeDefined();
+    expect(yamada?.staffId).toBe(101);
+    expect(yamada?.wrTargetDateId).toBe(734);
 
-    const kobayashi = records.find((r) => r.staffName === '小林　弘和');
-    expect(kobayashi).toBeDefined();
-    expect(kobayashi?.staffId).toBe(381);
-    expect(kobayashi?.wrTargetDateId).toBe(735);
+    const sato = records.find((r) => r.staffName === '佐藤 花子');
+    expect(sato).toBeDefined();
+    expect(sato?.staffId).toBe(102);
+    expect(sato?.wrTargetDateId).toBe(735);
   });
 
   it('sends private manager summary strictly to manager Slack ID (DM)', async () => {
@@ -222,8 +221,8 @@ describe('WeeklyCheckService', () => {
     const service = new WeeklyCheckService(mockGemini);
     const mockReports: WeeklyReportContent[] = [
       {
-        staffId: 121,
-        staffName: '小川　智矢',
+        staffId: 101,
+        staffName: '山田　太郎',
         impression: '順調に進捗しています。',
         weekUptime: 40,
         projects: [
@@ -240,9 +239,9 @@ describe('WeeklyCheckService', () => {
 
     expect(result.success).toBe(true);
     expect(mockPostMessage).toHaveBeenCalledTimes(1);
-    // Crucial check: channel must be the manager's Slack ID ('U_ONUMA_123'), NOT a public channel!
+    // Crucial check: channel must be the manager's Slack ID ('U_MGR_000'), NOT a public channel!
     expect(mockPostMessage).toHaveBeenCalledWith({
-      channel: 'U_ONUMA_123',
+      channel: 'U_MGR_000',
       text: expect.stringContaining('【マネージャー専用・非公開】週報AI要約レポート'),
     });
   });
@@ -323,7 +322,7 @@ describe('WeeklyCheckService', () => {
 
     const message = formatGSessionScheduleMessage(mockDays);
 
-    expect(message).toContain('🗓️ *【GroupSession】大沼さんの1週間スケジュール* (09/18(金)〜09/24(木))');
+    expect(message).toContain('🗓️ *【GroupSession】1週間のスケジュール* (09/18(金)〜09/24(木))');
     expect(message).toContain('📌 *チーム定例*');
     expect(message).toContain('🇯🇵 _敬老の日_ (予定なし)');
     expect(message).toContain('🏖️ *夏休み*');
@@ -347,13 +346,13 @@ describe('WeeklyCheckService', () => {
     // Spy on internal methods to avoid external network calls
     jest.spyOn(service, 'checkWeeklyReports').mockResolvedValue({
       weekLabel: '先週分',
-      submitted: ['大沼　佑麻'],
+      submitted: ['メンバーA'],
       unsubmitted: [],
       totalMembers: 1,
     });
     jest.spyOn(service, 'checkGSessionLogins').mockResolvedValue({
       inactiveMembers: [],
-      activeMembers: [{ name: '大沼　佑麻', daysSinceLastLogin: 1, isInactive: false }],
+      activeMembers: [{ name: 'メンバーA', daysSinceLastLogin: 1, isInactive: false }],
     });
     jest.spyOn(service, 'fetchWeeklyReportTop').mockResolvedValue(null);
     jest.spyOn(service, 'fetchGSessionMySchedule').mockResolvedValue([
@@ -374,11 +373,11 @@ describe('WeeklyCheckService', () => {
       })
     );
 
-    // Check that schedule was posted strictly to manager DM ('U_ONUMA_123')
+    // Check that schedule was posted strictly to manager DM ('U_MGR_000')
     expect(mockPostMessage).toHaveBeenCalledWith(
       expect.objectContaining({
-        channel: 'U_ONUMA_123',
-        text: expect.stringContaining('【GroupSession】大沼さんの1週間スケジュール'),
+        channel: 'U_MGR_000',
+        text: expect.stringContaining('【GroupSession】1週間のスケジュール'),
       })
     );
   });
