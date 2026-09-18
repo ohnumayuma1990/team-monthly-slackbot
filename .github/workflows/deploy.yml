@@ -6,6 +6,10 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -14,32 +18,22 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Check GCP Credentials
-        id: check_credentials
-        run: |
-          if [ -z "${{ secrets.GCP_SA_KEY }}" ]; then
-            echo "has_credentials=false" >> $GITHUB_OUTPUT
-            echo "::notice::GCP_SA_KEY is not configured in GitHub Secrets. Cloud Run deployment skipped."
-          else
-            echo "has_credentials=true" >> $GITHUB_OUTPUT
-          fi
-
+      # Workload Identity Federation によるセキュアな認証（秘密鍵JSON不要）
       - name: Authenticate to Google Cloud
-        if: steps.check_credentials.outputs.has_credentials == 'true'
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          workload_identity_provider: 'projects/819933730656/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider'
+          service_account: 'github-actions-deployer@project-af21d0bc-5f83-49ad-b24.iam.gserviceaccount.com'
 
       - name: Set up Cloud SDK
-        if: steps.check_credentials.outputs.has_credentials == 'true'
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Deploy to Cloud Run
-        if: steps.check_credentials.outputs.has_credentials == 'true'
         run: |
           gcloud run deploy team-monthly-slackbot \
             --source . \
             --region asia-northeast1 \
+            --project project-af21d0bc-5f83-49ad-b24 \
             --min-instances 0 \
             --max-instances 1 \
             --allow-unauthenticated
