@@ -25,6 +25,14 @@
  *    - 実行する関数: syncGmailToSlack
  *    - イベントの送信元: 時間手動型
  *    - 時間の間隔: 「時間ベースのタイマー（10分〜30分おき）」または「日付ベースのタイマー（午前8時〜9時）」
+ * 7. 【Slackコマンド（/gmail-check）から即時実行したい場合】
+ *    - 右上の青い「デプロイ」ボタン ＞「新しいデプロイ」をクリック
+ *    - 種類の選択（歯車アイコン）:「ウェブアプリ」を選択
+ *    - 説明:「Gmail Sync Webhook」など
+ *    - 次のユーザーとして実行:「自分」
+ *    - アクセスできるユーザー:「全員」
+ *    - 「デプロイ」をクリックし、発行された「ウェブアプリのURL」をコピー
+ *    - Cloud Run の環境変数 `GAS_GMAIL_SYNC_URL` に設定します。
  * ==============================================================================
  */
 
@@ -201,11 +209,66 @@ function syncGmailToSlack() {
         processedThreads[k].addLabel(processedLabel);
       }
       console.log('全スレッドに「' + CONFIG.PROCESSED_LABEL + '」ラベルを付与しました。完了！');
+      return {
+        success: true,
+        threadsFound: threads.length,
+        messagesSent: messagesToSend.length
+      };
     } else {
       console.error('SlackBotへの送信でエラーコードが返されました: ' + responseCode);
+      return {
+        success: false,
+        threadsFound: threads.length,
+        messagesSent: 0,
+        error: 'Cloud Run returned status ' + responseCode
+      };
     }
   } catch (e) {
     console.error('UrlFetchAppの実行中に例外が発生しました: ' + e.message);
+    return {
+      success: false,
+      threadsFound: threads.length,
+      messagesSent: 0,
+      error: e.message
+    };
+  }
+}
+
+/**
+ * Web App エンドポイント (GET/POST)
+ * SlackBot の /gmail-check コマンドから呼び出された際に即時実行されます
+ */
+function doGet(e) {
+  return handleWebRequest(e);
+}
+
+function doPost(e) {
+  return handleWebRequest(e);
+}
+
+function handleWebRequest(e) {
+  // トークン検証（CONFIG.SECRET_TOKENが設定されている場合）
+  if (CONFIG.SECRET_TOKEN) {
+    var token = (e && e.parameter && e.parameter.token) || '';
+    if (token !== CONFIG.SECRET_TOKEN) {
+      return ContentService.createTextOutput(JSON.stringify({
+        success: false,
+        error: 'Unauthorized'
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+
+  try {
+    var result = syncGmailToSlack();
+    return ContentService.createTextOutput(JSON.stringify({
+      success: result ? result.success : true,
+      result: result
+    })).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({
+      success: false,
+      error: err.message
+    })).setMimeType(ContentService.MimeType.JSON);
   }
 }
 

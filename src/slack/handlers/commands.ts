@@ -255,11 +255,7 @@ export function registerCommandHandlers(
     });
 
     try {
-      await weeklyService.runWeeklySummary(
-        client,
-        command.user_id,
-        options
-      );
+      await weeklyService.runWeeklySummary(client, command.user_id, options);
       await respond({
         response_type: 'ephemeral',
         text: '✅ 週報AI要約を作成し、DMへ送信しました！SlackのDMをご確認ください。',
@@ -398,4 +394,77 @@ export function registerCommandHandlers(
   app.command('/attendance-check', handleAttendanceCommand);
   app.command('/pydio-check', handleAttendanceCommand);
   app.command('/kintai-check', handleAttendanceCommand);
+
+  // Command handler for /gmail-check & /mail-check (on-demand Gmail sync trigger via GAS)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleGmailCheckCommand = async ({ ack, respond }: any) => {
+    await ack();
+
+    const gasUrl = process.env.GAS_GMAIL_SYNC_URL;
+    if (!gasUrl) {
+      await respond({
+        response_type: 'ephemeral',
+        text:
+          '⚠️ *`GAS_GMAIL_SYNC_URL` が設定されていません*\n\n' +
+          'SlackからGmail同期を実行するには、Gmail連携スクリプト（GAS）をウェブアプリとしてデプロイし、' +
+          '発行されたURLをCloud Runの環境変数 `GAS_GMAIL_SYNC_URL` に登録してください。\n' +
+          '（※設定手順は `scripts/gas_gmail_sync.js` またはドキュメントをご確認ください）',
+      });
+      return;
+    }
+
+    await respond({
+      response_type: 'ephemeral',
+      text: '⏳ Gmailの新着メール（勤怠申請・全社周知）をチェックしています... 少々お待ちください。',
+    });
+
+    try {
+      const secretToken = process.env.REMINDER_SECRET_TOKEN;
+      const url = new URL(gasUrl);
+      if (secretToken) {
+        url.searchParams.set('token', secretToken);
+      }
+
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: { 'User-Agent': 'TeamMonthlySlackBot/1.0' },
+        redirect: 'follow',
+      });
+
+      if (!response.ok) {
+        throw new Error(`GAS returned HTTP status ${response.status}`);
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data: any = await response.json();
+      if (!data.success) {
+        throw new Error(
+          data.error || 'GASからの同期処理でエラーが返されました'
+        );
+      }
+
+      const sentCount = data.result?.messagesSent ?? 0;
+      if (sentCount > 0) {
+        await respond({
+          response_type: 'ephemeral',
+          text: `✅ Gmailのチェックが完了しました！\n新着メール *${sentCount}件* を検知し、処理（DM通知・全体周知）を行いました。`,
+        });
+      } else {
+        await respond({
+          response_type: 'ephemeral',
+          text: '✅ Gmailのチェックが完了しました！\n新着の未処理メールはありませんでした。',
+        });
+      }
+    } catch (err: unknown) {
+      console.error('Error in /gmail-check command:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      await respond({
+        response_type: 'ephemeral',
+        text: `⚠️ Gmail同期の実行中にエラーが発生しました:\n${msg}`,
+      });
+    }
+  };
+
+  app.command('/gmail-check', handleGmailCheckCommand);
+  app.command('/mail-check', handleGmailCheckCommand);
 }

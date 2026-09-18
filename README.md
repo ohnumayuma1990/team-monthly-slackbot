@@ -53,6 +53,7 @@
    - `/weekly-summary`: 週報AI要約・スケジュール取得（マネージャーDM宛）
    - `/my-schedule`: 今週のGroupSessionスケジュール確認
    - `/attendance-check` (別名 `/pydio-check`, `/kintai-check`): Pydio 6の勤怠出勤簿（Excel）提出確認（未提出者はSlackメンション付きで全体通知）
+   - `/gmail-check` (別名 `/mail-check`): Gmail新着メール（勤怠申請・全社周知）をGAS経由で即時同期確認
 4. **Socket Mode** (ローカル開発を行う場合):
    - 「Settings」→「Socket Mode」を Enable にし、App-Level Token（`xapp-...`）を発行。
 5. 「Install to Workspace」をクリックし、**Bot User OAuth Token (`xoxb-...`)** と **Signing Secret** を取得。

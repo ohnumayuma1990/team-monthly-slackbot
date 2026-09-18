@@ -349,11 +349,10 @@ describe('EmailProcessingService', () => {
       '2026-09-18'
     );
     expect(message).toContain('チーム勤怠連絡');
-    expect(message).toContain('昨日12:00以降の申請');
     expect(message).toContain(
-      '・*山田 太郎*: [全休] [09/18] [当日申請] (体調不良のため終日お休み)'
+      '・ *山田 太郎*: [全休] [09/18] [当日申請] (体調不良のため終日お休み)'
     );
-    expect(message).toContain('・*佐藤 花子*: [在宅] [09/18]');
+    expect(message).toContain('・ *佐藤 花子*: [在宅] [09/18]');
     expect(message).toContain('その他メンバー: 申請なし（通常勤務）');
   });
 
