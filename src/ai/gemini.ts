@@ -104,6 +104,7 @@ export class GeminiService {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'x-goog-api-key': this.apiKey,
           },
           body: JSON.stringify(requestBody),
         });

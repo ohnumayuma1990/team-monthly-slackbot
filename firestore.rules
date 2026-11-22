@@ -1,0 +1,26 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Team Management collections contain sensitive HR / weekly report data.
+    // Direct Client SDK access is strictly prohibited (Fail-Closed).
+    // All reads and writes must pass through server-side Admin RBAC APIs via Admin SDK.
+    match /tm_meta/{document=**} {
+      allow read, write: if false;
+    }
+    match /tm_weekly_snapshots/{document=**} {
+      allow read, write: if false;
+    }
+    match /tm_weekly_reports/{document=**} {
+      allow read, write: if false;
+    }
+    match /tm_weekly_ai_summaries/{document=**} {
+      allow read, write: if false;
+    }
+    match /tm_gsession_snapshots/{document=**} {
+      allow read, write: if false;
+    }
+    match /tm_sync_jobs/{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
