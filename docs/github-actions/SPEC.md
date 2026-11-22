@@ -7,55 +7,55 @@
 ## 1. CI Pipeline (`ci.yml`)
 
 ### 目的
-コードの変更（Push または Pull Request）に対して、自動的に静的解析（Lint）、ビルド（Build）、および単体テスト（Test）を実行し、コードの品質を担保します。
+コードの変更（Push または Pull Request）に対して、自動的に静的解析（Lint）、ビルド（Build）、単体テスト（Test）、ハードコード監査、Slack構文チェック、本番ヘルスチェック等を含む6層QA検証 (`npm run verify`) を実行し、コードの品質を担保します。
 
 ### トリガー
 - `push`: `main`, `master`, および `jules-*` ブランチへのプッシュ時。
 - `pull_request`: `main`, `master` ブランチに対する Pull Request 作成・更新時。
 
+### 権限と制御 (Permissions & Concurrency)
+- `permissions`: 最小権限原則に基づき `contents: read` のみを付与。
+- `concurrency`: 同一ブランチ／PRでの重複実行をキャンセル (`cancel-in-progress: true`)。
+
 ### ワークフローのステップ
 1. **Checkout repository**: リポジトリのコードをチェックアウトします (`actions/checkout@v4`)。
 2. **Setup Node.js**: Node.js 22.x 環境をセットアップし、npm キャッシュを有効化します (`actions/setup-node@v4`)。
 3. **Install dependencies**: `npm ci` を実行し、`package-lock.json` に基づいて依存関係をクリーンインストールします。
-4. **Run Linter**: `npm run lint` を実行し、ESLint 等によるコードチェックを行います。
-5. **Build TypeScript**: `npm run build` を実行し、TypeScript コードをコンパイルします。
-6. **Run Tests**: `npm test` を実行し、Jest 等によるテストを実行します。
+4. **Run 6-Layer QA Verification**: `npm run verify` を実行し、ESLint、TypeScriptビルド、Jestテスト、ハードコード機密スキャン、Slack mrkdwn構文監査、本番ヘルスチェックの全6層検査を実施します。
 
 ### 他リポジトリへの導入時の注意点
 - `node-version`: プロジェクトで使用している Node.js のバージョンに合わせて変更してください。
-- npm スクリプト (`lint`, `build`, `test`) が `package.json` に正しく定義されているか確認してください。
-- パッケージマネージャーが `yarn` や `pnpm` の場合は、コマンドとキャッシュ設定 (`cache: 'yarn'` 等) を変更してください。
+- `package.json` に `verify` スクリプトが定義されているか確認してください。
 
 ---
 
 ## 2. Deploy to Cloud Run (`deploy.yml`)
 
 ### 目的
-`main` ブランチへのプッシュ時に、アプリケーションを Google Cloud Run に自動デプロイします。Workload Identity Federation (WIF) を利用することで、サービスアカウントの秘密鍵（JSON）を GitHub に保存することなく、安全に GCP リソースへアクセスします。
+`main` ブランチへのプッシュ時に、アプリケーションを Google Cloud Run に自動デプロイします。Workload Identity Federation (WIF) を利用することで、サービスアカウントの秘密鍵（JSON）を GitHub に保存することなく、安全に GCP リソースへアクセスします。また、デプロイ後のヘルスチェック疎通確認と、Artifact Registry の古いコンテナイメージの自動クリーンアップ（0.5GB 無料枠保護）を行います。
 
 ### トリガー
 - `push`: `main` ブランチへのプッシュ時。
 - `workflow_dispatch`: GitHub の Web UI からの手動実行。
 
-### 権限 (Permissions)
-- `contents: read`: リポジトリの読み取り権限。
-- `id-token: write`: OIDC トークン発行に必須（WIF 認証用）。
+### 権限と制御 (Permissions & Concurrency)
+- `permissions`:
+  - `contents: read`: リポジトリの読み取り権限。
+  - `id-token: write`: OIDC トークン発行に必須（WIF 認証用）。
+- `concurrency`: 本番デプロイの競合を防ぐため直列化 (`cancel-in-progress: false`)。
 
 ### ワークフローのステップ
-1. **Checkout code**, **Setup Node.js**, **Install dependencies**, **Run Tests**: CI ワークフローと同様に環境構築とテストを実行します。
-2. **Authenticate to Google Cloud**: `google-github-actions/auth@v2` を使用して GCP に認証します。
-   - `workload_identity_provider`: WIF のプロバイダ名を指定します。
-   - `service_account`: WIF で権限を付与したサービスアカウントを指定します。
-3. **Set up Cloud SDK**: `google-github-actions/setup-gcloud@v2` を使用して gcloud コマンドを利用可能にします。
-4. **Deploy to Cloud Run**: `gcloud run deploy` コマンドを実行し、ソースコードからコンテナをビルド・デプロイします。
+1. **Checkout code**, **Setup Node.js**, **Install dependencies**: 環境構築と依存関係のインストールを行います。
+2. **Run 6-Layer QA Verification**: `npm run verify` を実行し、デプロイ前に6層QA検証をクリアしていることを保証します。
+3. **Authenticate to Google Cloud**: `google-github-actions/auth@v2` を使用して GCP に認証します（WIF）。
+4. **Set up Cloud SDK**: `google-github-actions/setup-gcloud@v2` を使用して gcloud コマンドを利用可能にします。
+5. **Deploy to Cloud Run**: `gcloud run deploy` コマンドを実行し、ソースコードからコンテナをビルド・デプロイします（`--min-instances 0` でコスト完全0円運用）。
+6. **Verify Deployed Cloud Run Health (/health)**: デプロイされたサービスの `/health` エンドポイントに対し、指数バックオフ（2秒→4秒→8秒）付きの最大3回リトライで `curl` を実行し、`"status":"healthy"` が含まれることを検証します。
+7. **Cleanup Old Artifact Registry Images (Free Tier 0.5GB Protection)**: Artifact Registry のイメージタグ一覧を作成日時降順で取得し、最新2世代を除いた古いイメージダイジェストを `--delete-tags` 指定で自動削除し、無料枠（0.5GB）の超過を防止します。
 
 ### 他リポジトリへの導入時の注意点
 - `workload_identity_provider` と `service_account` を対象 GCP プロジェクトのものに変更してください。
-- `gcloud run deploy` コマンドのパラメータを変更してください：
-  - `SERVICE_NAME`: デプロイするサービス名 (例: `team-monthly-slackbot`)。
-  - `--region`: GCP のリージョン (例: `asia-northeast1`)。
-  - `--project`: GCP プロジェクト ID。
-  - `--min-instances` / `--max-instances`: 必要に応じてインスタンス数を調整してください。無料枠を活用する場合は `--min-instances 0` に設定します。
+- `gcloud run deploy` およびヘルスチェック・クリーンアップステップのサービス名、リージョン、プロジェクトID、イメージパスを対象環境に合わせて適宜調整してください。
 
 ---
 
