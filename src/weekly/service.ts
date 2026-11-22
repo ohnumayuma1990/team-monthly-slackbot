@@ -15,6 +15,7 @@ import {
   findMemberByName,
   getAllMembers,
 } from '../config/members';
+import { safeParseFilingDataArray } from '../team-management/core/parsers/weekly-parser';
 
 export const ONUMA_TEAM_MEMBERS: string[] = [];
 
@@ -848,8 +849,7 @@ export function parseWeeklyReportTopHtml(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let filingData: any[] = [];
   try {
-    const fn = new Function('return ' + jsonStr);
-    filingData = fn();
+    filingData = safeParseFilingDataArray(jsonStr);
   } catch (e) {
     console.warn('Failed to parse filingData from HTML:', e);
   }
@@ -929,8 +929,7 @@ export function extractSubmittedStaffRecords(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let filingData: any[] = [];
   try {
-    const fn = new Function('return ' + jsonStr);
-    filingData = fn();
+    filingData = safeParseFilingDataArray(jsonStr);
   } catch (e) {
     console.warn('Failed to parse filingData for submitted staff records:', e);
     return [];

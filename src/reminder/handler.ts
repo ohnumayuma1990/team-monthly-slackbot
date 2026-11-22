@@ -8,6 +8,7 @@ import {
   PydioAttendanceService,
   determineAttendanceTarget,
 } from '../pydio/service';
+import { createTeamManagementRoutes } from '../team-management/api/routes';
 
 function readRequestBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -330,5 +331,6 @@ export function createCustomRoutes(
         );
       },
     },
+    ...createTeamManagementRoutes(),
   ];
 }
